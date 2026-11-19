@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { api, setDemo, COACH_MODE } from '../lib/api.js'
-import { List, Field, Seg, Switch, useToast } from '../ui.jsx'
+import { api, setDemo, COACH_MODE, configured } from '../lib/api.js'
+import { List, Row, Field, Seg, Switch, useToast } from '../ui.jsx'
 
 export function SetupPage() {
   return <div className="auth">
@@ -8,7 +8,12 @@ export function SetupPage() {
     <h1>Hyrox Coach</h1>
     <p className="lead">La base de données n’est pas encore reliée.</p>
     <div className="card glass">
-      <p>Ajoutez les variables <b>VITE_SUPABASE_URL</b> et <b>VITE_SUPABASE_ANON_KEY</b> dans Netlify (Site configuration › Environment variables), puis redéployez. Le tutoriel fourni détaille chaque étape.</p>
+      <p>Dans Netlify (Site configuration › Environment variables), ajoutez les deux variables ci-dessous, puis <b>Deploys › Trigger deploy › Clear cache and deploy site</b> : elles ne sont prises en compte qu’au moment de la construction du site.</p>
+      <List>
+        <Row title="VITE_SUPABASE_URL" sub="https://xxxx.supabase.co" value={import.meta.env.VITE_SUPABASE_URL ? <span className="good">reçue</span> : <span className="bad">absente</span>} />
+        <Row title="VITE_SUPABASE_ANON_KEY" sub="sb_publishable_… (ou ancienne clé anon)" value={import.meta.env.VITE_SUPABASE_ANON_KEY ? <span className="good">reçue</span> : <span className="bad">absente</span>} />
+      </List>
+      <p className="small muted">Version construite le {new Date(__BUILD_TIME__).toLocaleString('fr-FR')}. Si cette date est antérieure à l’ajout des variables, relancez le déploiement.</p>
       <button className="btn block" onClick={() => setDemo(true)}>Essayer en mode démo</button>
       <p className="small muted center" style={{ marginTop: 10 }}>Données fictives, gardées dans ce navigateur uniquement.</p>
     </div>
@@ -31,6 +36,13 @@ export function AuthPage() {
       } else { await api.auth.reset(f.email.trim()); setInfo('Si un compte existe, un e-mail de réinitialisation a été envoyé.') }
     } catch (x) { setErr(x.message) } finally { setBusy(false) }
   }
+  if (api.demo && configured) return <div className="auth">
+    <img className="logo" src="/icon.svg" alt="" />
+    <h1>Hyrox Coach</h1>
+    <p className="lead">Vous êtes en <b>mode démo</b> (données fictives, dans ce navigateur).</p>
+    <button className="btn block" onClick={() => setDemo(false)}>Quitter la démo et me connecter</button>
+    <button className="btn glass block" style={{ marginTop: 10 }} onClick={() => api.auth.signIn()}>Continuer la démo</button>
+  </div>
   return <div className="auth">
     <img className="logo" src="/icon.svg" alt="" />
     <h1>Hyrox Coach</h1>
@@ -49,6 +61,7 @@ export function AuthPage() {
     {api.demo && <>
       <button className="btn green block" style={{ marginTop: 12 }} onClick={() => api.auth.signIn()}>Entrer dans la démo</button>
       <p className="center small" style={{ marginTop: 18 }}><button className="link" onClick={() => setDemo(false)}>Quitter le mode démo</button></p></>}
+    {!api.demo && <p className="center small" style={{ marginTop: 18 }}><button className="link" onClick={() => setDemo(true)}>Essayer avec des données fictives (démo)</button></p>}
   </div>
 }
 

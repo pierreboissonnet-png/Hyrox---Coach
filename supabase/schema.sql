@@ -82,6 +82,7 @@ declare t uuid;
 begin
   insert into teams (name, division, category, created_by) values (p_name, p_division, p_category, auth.uid()) returning id into t;
   insert into team_members (team_id, user_id) values (t, auth.uid());
+  perform public.claim_team_sessions(t);   -- reprend les séances importées avant son arrivée
   return t;
 end $$;
 
@@ -101,6 +102,7 @@ begin
   select count(*) into n from team_members where team_id = t;
   if n >= 2 then raise exception 'Ce duo a déjà ses deux membres : créez une nouvelle équipe avec votre nouveau partenaire'; end if;
   insert into team_members (team_id, user_id) values (t, auth.uid());
+  perform public.claim_team_sessions(t);   -- reprend les séances importées avant son arrivée
   return t;
 end $$;
 
@@ -162,6 +164,32 @@ create table if not exists public.hr_series (
   updated_at timestamptz not null default now(),
   primary key (session_id, user_id)
 );
+
+-- ---------- Séances importées avant l'arrivée du partenaire ----------
+-- Quand le partenaire rejoint le duo, il prend la place laissée libre (son prénom est déjà connu) et récupère son cardio importé.
+create or replace function public.claim_team_sessions(t uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r record; w text; h jsonb;
+begin
+  for r in select id, athletes, names, data from sessions where team_id = t loop
+    if r.athletes->>'A' = auth.uid()::text or r.athletes->>'B' = auth.uid()::text then continue; end if;
+    w := null;
+    if coalesce(r.athletes->>'A', '') = '' and coalesce(r.names->>'A', '') <> '' then w := 'A';
+    elsif coalesce(r.athletes->>'B', '') = '' and coalesce(r.names->>'B', '') <> '' then w := 'B'; end if;
+    if w is null then continue; end if;
+    update sessions set athletes = jsonb_set(coalesce(athletes, '{}'::jsonb), array[w], to_jsonb(auth.uid()::text)) where id = r.id;
+    h := r.data->'pendingHr'->w;
+    if h is not null then
+      insert into hr_series (session_id, user_id, t, bpm, source, offset_s)
+      values (r.id, auth.uid(),
+        array(select x::int from jsonb_array_elements_text(h->'t') with ordinality a(x, i) order by i),
+        array(select x::smallint from jsonb_array_elements_text(h->'bpm') with ordinality a(x, i) order by i),
+        coalesce(h->>'source', 'import'), coalesce((h->>'offset_s')::int, 0))
+      on conflict (session_id, user_id) do nothing;
+      update sessions set data = data #- array['pendingHr', w] where id = r.id;
+    end if;
+  end loop;
+end $$;
 
 -- ---------- Journal personnel (privé) ----------
 -- kind : weight, blood, cycle, nutrition, supplements, program, run, wellbeing

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
+import { hasB } from '../lib/session.js'
 import { api, COACH_MODE } from '../lib/api.js'
 import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, Switch, useToast, useLoad } from '../ui.jsx'
 import { LineChart, DeltaBars, ZoneBar, COLORS } from '../charts.jsx'
@@ -32,7 +33,7 @@ export default function SessionPage({ id, tab = 'chrono' }) {
   const plan = useMemo(() => normPlan((s && s.plan) || (team && team.plan)), [team, s && s.plan])
   if (!s) return <Page back="#/seances" title="Séance"><p className="muted">Chargement…</p></Page>
   const d = normData(s.data)
-  const duo = !!(s.athletes && s.athletes.B)
+  const duo = hasB(s)
   const who = w => { const uid = s.athletes[w]; if (uid === profile.id) return profile.display_name; const p = profileOf(uid, teams, profile); return (p && p.display_name) || (s.names && s.names[w]) || 'Athlète ' + w }
   const keeperOnly = isKeeperOnly(s, profile.id, teams)
 
@@ -267,8 +268,9 @@ function Cardio({ s, d, duo, who }) {
     <List>{slots.map(w => { const r = get(w); return <div className="row stack" key={w}>
       <span className="label"><span className="t"><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)}</span><span className="s">{r ? `${r.t.length} mesures · ${r.source}${r.offset_s ? ` · décalage ${r.offset_s > 0 ? '+' : ''}${r.offset_s} s` : ''}` : 'Export Santé (.zip), .fit, .tcx, .gpx ou .csv'}</span></span>
       <div className="row-gap">{r && <><button className="btn glass small" onClick={() => shift(r, -5)} aria-label="Décaler de -5 s">−5 s</button><button className="btn glass small" onClick={() => shift(r, 5)} aria-label="Décaler de +5 s">+5 s</button></>}
+      {!s.athletes[w] && <span className="small muted">Pas encore inscrit : son cardio lui sera rattaché quand il rejoindra le duo.</span>}
       {s.athletes[w] === profile.id && profile.consent_health && <button className="btn tinted small" onClick={() => fromHealth(w)}><Icon name="heart" size={15} />Depuis Santé</button>}
-      <label className="btn tinted small">{busy && busy.startsWith(w) ? busy.slice(2) : r ? 'Remplacer' : 'Importer'}<input type="file" hidden accept=".zip,.xml,.fit,.tcx,.gpx,.csv,.txt" onChange={e => e.target.files[0] && upload(w, e.target.files[0])} /></label></div>
+      {s.athletes[w] && <label className="btn tinted small">{busy && busy.startsWith(w) ? busy.slice(2) : r ? 'Remplacer' : 'Importer'}<input type="file" hidden accept=".zip,.xml,.fit,.tcx,.gpx,.csv,.txt" onChange={e => e.target.files[0] && upload(w, e.target.files[0])} /></label>}</div>
     </div> })}</List>
     <p className="foot">Avec la synchro Santé (Moi › Réglages), le cardio de l’Apple Watch arrive tout seul après l’entraînement. Sinon : import d’un fichier, lu dans votre navigateur.</p>
     {ser.length > 0 && <>
@@ -425,7 +427,7 @@ function Stats({ s, d, plan, duo, who }) {
 export async function coachPayload(s, d, plan, who, me, opts = {}) {
   const hrOk = p => p && (opts.hrFor ? opts.hrFor.includes(p.id) : p.consent_ai)   // cardio transmis seulement avec accord
   if (isCustom(s)) {   // séance spécialisée : objectifs et réalisé par exercice, FC par étape (si accord)
-    const slots = s.athletes.B ? ['A', 'B'] : ['A'], profs = await api.profiles.many(slots.map(w => s.athletes[w]))
+    const slots = hasB(s) ? ['A', 'B'] : ['A'], profs = await api.profiles.many(slots.map(w => s.athletes[w]))
     let rows = []; try { rows = await api.hr.list(s.id) } catch {}
     const hr = {}; slots.forEach(w => { const p = profs.find(x => x.id === s.athletes[w]), r = rows.find(x => x.user_id === s.athletes[w]); if (hrOk(p) && r) hr[w] = hrBySteps(s, r) })
     const sum = customSummary(s), age = p => p && p.birth_year ? new Date().getFullYear() - p.birth_year : null
@@ -438,7 +440,7 @@ export async function coachPayload(s, d, plan, who, me, opts = {}) {
       insights: [],
     }
   }
-  const sum = summary(s, plan), slots = s.athletes.B ? ['A', 'B'] : ['A']
+  const sum = summary(s, plan), slots = hasB(s) ? ['A', 'B'] : ['A']
   const profs = await api.profiles.many(slots.map(w => s.athletes[w]))
   const age = p => p && p.birth_year ? new Date().getFullYear() - p.birth_year : null
   let hr = {}
@@ -464,7 +466,7 @@ export const coachAllowed = p => COACH_MODE === 'local' || !!(p && p.consent_ai)
 export async function askCoach(s, d, plan, who, me, opt = {}) {
   if (COACH_MODE === 'local') {   // gratuit : analyse rédigée par l'application elle-même
     let rows = []; try { rows = await api.hr.list(s.id) } catch {}
-    const slots = s.athletes.B ? ['A', 'B'] : ['A'], hrBy = {}
+    const slots = hasB(s) ? ['A', 'B'] : ['A'], hrBy = {}
     let hrSteps = {}, profs = []
     try { profs = await api.profiles.many(slots.map(w => s.athletes[w]).filter(Boolean)) } catch {}
     slots.forEach(w => { const r = rows.find(x => x.user_id === s.athletes[w]); if (!r) return

@@ -100,3 +100,6 @@ export const actions = {
   exitStation(d, t) { d = clone(d); const i = nextIdx(d), id = SEGS[i].id, rs = d.relays[id], l = rs[rs.length - 1]; if (l && l.e == null) l.e = t; d.cp[i] = t; return d },
   reset(d) { const e = emptyData(d.runKm); return { ...e, runs: d.runs, units: d.units, note: d.note } },
 }
+
+/** Séance à deux athlètes (le second peut ne pas avoir encore rejoint le duo : son prénom suffit) */
+export const hasB = s => !!(s && s.athletes && (s.athletes.B || (s.names && s.names.B)))

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, createContext, useContext, Component } from 'react'
-import { api, configured } from './lib/api.js'
+import { api, configured, isDemo } from './lib/api.js'
 import { Icon, ToastHost } from './ui.jsx'
 import { AuthPage, Onboarding, SetupPage, NewPassword } from './pages/Auth.jsx'
 import Home from './pages/Home.jsx'
@@ -67,7 +67,7 @@ export default function App() {
   useEffect(() => { applySettings(settings); try { localStorage.setItem('hx-settings', JSON.stringify(settings)) } catch {} }, [settings])
   useEffect(() => { const m = matchMedia('(prefers-color-scheme: dark)'); const f = () => applySettings(settings); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [settings])
   useEffect(() => {
-    if (!configured && !api.demo) return
+    if (!configured && !isDemo()) return
     api.auth.user().then(setUser)
     return api.auth.onChange(u => setUser(u))
   }, [])
@@ -80,7 +80,7 @@ export default function App() {
   }, [])
   useEffect(() => { if (user && profile) reload().catch(e => logError(e.message)) }, [user && user.id, !!profile])
 
-  if (!configured && !api.demo) return <SetupPage />
+  if (!configured && !isDemo()) return <SetupPage />
   if (user === undefined) return <div className="auth"><img className="logo" src="/icon.svg" alt="" /></div>
   if (hash.startsWith('#/nouveau-mot-de-passe') && user) return <ToastHost><NewPassword /></ToastHost>
   if (!user) return <ToastHost><AuthPage /></ToastHost>

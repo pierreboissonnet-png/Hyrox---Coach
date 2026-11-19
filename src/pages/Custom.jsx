@@ -1,6 +1,7 @@
 // Séances spécialisées : création (modèles), chrono par blocs, saisie du réalisé, analyses.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
+import { hasB } from '../lib/session.js'
 import { api } from '../lib/api.js'
 import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad } from '../ui.jsx'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
@@ -137,7 +138,7 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
       <div className="progress"><i style={{ width: ((cur < 0 ? steps.length : cur) / steps.length * 100) + '%' }} /></div>
       {st ? <>
         <div className="cur">{exLabel(st)}{st.of > 1 ? ` · série ${st.set}/${st.of}` : ''}</div>
-        <div className="cur-sub">Objectif : {fmtTarget(st.target)}{s.athletes.B ? ' · ' + nm(st.w) : ''}{st.note ? ' · ' + st.note : ''}</div>
+        <div className="cur-sub">Objectif : {fmtTarget(st.target)}{hasB(s) ? ' · ' + nm(st.w) : ''}{st.note ? ' · ' + st.note : ''}</div>
         {st.s == null ? <>
           {restLeft != null && <div className={'center num ' + (restLeft > 0 ? '' : 'good')} style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>{restLeft > 0 ? 'Récup ' + fmt(restLeft) : 'C’est reparti !'}</div>}
           <div className="pad"><button className="btn green full" onClick={() => { const x = cl(); x.steps[cur].s = rel(); commit(x) }}><Icon name="play" />Démarrer<small>{exLabel(st)}</small></button></div>
@@ -192,7 +193,7 @@ export function CustomStats({ s, who }) {
   const { profile, teams } = useApp()
   const rows = useLoad(() => api.hr.list(s.id), [s.id])
   const sum = customSummary(s), steps = sum.steps, d = s.data
-  const slots = s.athletes.B ? ['A', 'B'] : ['A']
+  const slots = hasB(s) ? ['A', 'B'] : ['A']
   const prof = w => { const id = s.athletes[w]; if (id === profile.id) return profile; for (const t of teams) { const m = t.members.find(x => x.user_id === id); if (m) return m.profile } return null }
   const get = w => (rows.data || []).find(r => r.user_id === s.athletes[w])
   const meSlot = s.athletes.A === profile.id ? 'A' : s.athletes.B === profile.id ? 'B' : 'A'
@@ -205,7 +206,7 @@ export function CustomStats({ s, who }) {
   const kcal = all ? kcalFromHR(all.avg, end / 60, prof(meSlot)) : kcalFromMET(steps.filter(x => x.w === meSlot || x.w === 'AB'), prof(meSlot))
   const z = [0, 0, 0, 0, 0]; let n = 0
   if (S) for (let t = 0; t <= end; t++) { const v = hrAt(S, t); if (v != null) { z[zoneOf(zones, v) - 1]++; n++ } }
-  const bands = steps.filter(x => x.s != null && x.e != null).map(x => ({ a: x.s / 1000, b: x.e / 1000, color: s.athletes.B ? COLORS[x.w === 'B' ? 'B' : 'A'] : '#5e5ce6' }))
+  const bands = steps.filter(x => x.s != null && x.e != null).map(x => ({ a: x.s / 1000, b: x.e / 1000, color: hasB(s) ? COLORS[x.w === 'B' ? 'B' : 'A'] : '#5e5ce6' }))
   const ser = slots.map(w => { const R = series(get(w)); return R && { color: COLORS[w], pts: R.t.map((x, k) => [x, R.b[k]]).filter(([x]) => x >= -60 && x <= end + 60) } }).filter(Boolean)
   if (!sum.done) return <div className="glass card"><Empty icon="chart">L’analyse apparaît après la première étape réalisée.</Empty></div>
   return <>

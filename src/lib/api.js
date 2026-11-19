@@ -2,7 +2,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { demoApi } from './demo.js'
 
-const URL_ = import.meta.env.VITE_SUPABASE_URL, KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Tolère une adresse copiée avec /rest/v1/ ou des espaces
+const URL_ = String(import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/(rest|auth)\/v1\/?$/, '').replace(/\/+$/, ''), KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
 export const configured = !!(URL_ && KEY)
 // Coach : « local » (gratuit, par défaut) ou « claude » (API Anthropic payante, fonction serveur « coach »)
 export const COACH_MODE = import.meta.env.VITE_COACH_MODE === 'claude' ? 'claude' : 'local'

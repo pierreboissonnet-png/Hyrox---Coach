@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react'
 import { useApp } from '../App.jsx'
 import { Page, Sec, List, Row, Stat, Empty, Icon, useLoad } from '../ui.jsx'
-import { api } from '../lib/api.js'
+import { api, setDemo } from '../lib/api.js'
 import { sleepStats, fmtH } from '../lib/sleep.js'
 import { Ring } from '../charts.jsx'
 import { fmt, fd, frDate, daysUntil, tone } from '../lib/hyrox.js'
@@ -30,7 +30,9 @@ export default function Home() {
   const sl = useLoad(() => profile.consent_health ? api.journal.list('sleep') : [], [])
   const sst = sleepStats(sl.data || []), lastNight = (sl.data || [])[0]
 
+  const demoBar = api.demo ? <div className="note" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ flex: 1 }}><b>Mode démo</b> : données fictives, gardées dans ce navigateur.</span><button className="btn small" onClick={() => setDemo(false)}>Quitter</button></div> : null
   return <Page title={(hour < 18 ? 'Bonjour ' : 'Bonsoir ') + (profile.display_name || '')}>
+    {demoBar}
     {next ? <a href="#/courses" className="hero glass" style={{ display: 'block', color: 'inherit' }}>
       <Ring value={1 - Math.min(days, 120) / 120} />
       <div className="kick">Prochaine course</div>

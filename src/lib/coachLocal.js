@@ -2,7 +2,7 @@
 // à partir des mêmes données que le coach Claude (objectifs, réalisé, relais, cardio).
 import { SEGS, STATIONS, fmt, fd } from './hyrox.js'
 import { DRILLS } from './program.js'
-import { split, runKm } from './session.js'
+import { split, runKm, hasB } from './session.js'
 import { summary, insights } from './analyze.js'
 import { isCustom, customSummary, progression, exLabel, fmtTarget, doneOf, achievement } from './custom.js'
 
@@ -12,7 +12,7 @@ const pct = a => Math.round(a * 100) + ' %'
 function hyroxText(s, plan, who, hrBy) {
   const sum = summary(s, plan), out = []
   if (!sum.all.n) return 'Pas encore de temps pointés pour cette séance.'
-  const duo = !!(s.athletes && s.athletes.B)
+  const duo = hasB(s)
   const st = sum.stations.filter(x => x.d != null)
   const late = [...st].sort((a, b) => b.d - a.d).filter(x => x.d > 5), fast = [...st].sort((a, b) => a.d - b.d).filter(x => x.d < -3)
   out.push('## En bref')

@@ -460,7 +460,8 @@ export function Settings() {
 export function Import() {
   const { teams, profile, user, reload } = useApp(), toast = useToast()
   const [file, setFile] = useState(null), [json, setJson] = useState(null), [me, setMe] = useState(''), [team, setTeam] = useState('')
-  const [ex, setEx] = useState(false), [busy, setBusy] = useState(''), [err, setErr] = useState('')
+  const [ex, setEx] = useState(false), [busy, setBusy] = useState(''), [err, setErr] = useState(''), [otherName, setOtherName] = useState('')
+  const { sessions } = useApp()
   const mine = activeTeams(teams, profile.id)
   const ath = json ? athletesIn(json) : []
   async function read(f) { setErr(''); setFile(f); try { const j = JSON.parse(await f.text()); if (!detect(j)) throw new Error('Fichier non reconnu.'); setJson(j); setMe(athletesIn(j)[0] || ''); setTeam(mine[0] ? mine[0].id : '') } catch (e) { setErr(e.message); setJson(null) } }
@@ -471,16 +472,28 @@ export function Import() {
       const meSlot = slots.A === user.id ? 'A' : 'B', other = meSlot === 'A' ? 'B' : 'A'
       const map = { [me]: meSlot }; ath.filter(a => a !== me).forEach(a => { map[a] = other })
       const res = convert(json, map, { includeExamples: ex })
-      let n = 0, nh = 0, skipped = 0
+      const partner = t ? t.members.find(m => m.user_id !== user.id) : null
+      const letter = ath.find(a => a !== me), oName = (partner && partner.profile.display_name) || otherName.trim() || ({ L: 'Laurent', P: 'Pierre' }[letter]) || 'Partenaire'
+      const duoFile = ath.length > 1
+      let n = 0, nh = 0, pending = 0, dup = 0
       for (const s of res.sessions) {
-        setBusy(`Séance ${++n}/${res.sessions.length}`)
-        const row = await api.sessions.save({ owner: user.id, team_id: t ? t.id : null, name: s.name, session_date: s.session_date, kind: s.kind, athletes: t ? slots : { A: user.id, B: null }, data: s.data })
-        for (const [w, h] of Object.entries(s.hr)) { const uid = (t ? slots : { A: user.id })[w]; if (!uid) { skipped++; continue } await api.hr.save({ session_id: row.id, user_id: uid, ...h }); nh++ }
+        setBusy(`Séance ${n + 1}/${res.sessions.length}`)
+        // Déjà importée (même départ) : on ne la duplique pas
+        if (sessions.some(x => x.data && x.data.startedAt && x.data.startedAt === s.data.startedAt && (x.team_id || null) === (t ? t.id : null))) { dup++; continue }
+        const athletes = { A: null, B: null }; athletes[meSlot] = user.id; if (t && slots[other]) athletes[other] = slots[other]
+        const names = { [meSlot]: profile.display_name, ...(duoFile ? { [other]: oName } : {}) }
+        // Cardio du partenaire pas encore inscrit : gardé dans la séance, transféré automatiquement quand il rejoint le duo
+        const data = { ...s.data }, pend = {}
+        for (const [w, h] of Object.entries(s.hr)) if (!athletes[w]) { if (t) { pend[w] = h; pending++ } }
+        if (Object.keys(pend).length) data.pendingHr = pend
+        const row = await api.sessions.save({ owner: user.id, team_id: t ? t.id : null, name: s.name, session_date: s.session_date, kind: s.kind, athletes, names, data })
+        for (const [w, h] of Object.entries(s.hr)) { if (!athletes[w]) continue; await api.hr.save({ session_id: row.id, user_id: athletes[w], ...h }); nh++ }
+        n++
       }
       if (t && res.strat) await api.teams.update(t.id, { plan: { ...(t.plan || {}), strat: res.strat } })
       if (res.zones[meSlot] && res.zones[meSlot].hr_zones) await api.profiles.update(user.id, res.zones[meSlot])
-      await reload(); setBusy(''); toast(`${n} séance(s) et ${nh} relevé(s) cardio importés`)
-      if (skipped) setErr(`${skipped} relevé(s) cardio non importé(s) : le partenaire n’a pas encore rejoint le duo. Réimportez après son arrivée.`)
+      await reload(); setBusy(''); toast(`${n} séance(s) et ${nh} relevé(s) cardio importés${dup ? ` (${dup} déjà présente(s))` : ''}`)
+      if (pending) setErr(`${pending} relevé(s) cardio de ${oName} sont gardés dans les séances : ils lui seront attribués automatiquement quand il rejoindra le duo avec le code d’invitation.`)
       else location.hash = '#/seances'
     } catch (e) { setErr(e.message); setBusy('') }
   }
@@ -491,9 +504,10 @@ export function Import() {
       <List>
         <Field label="Qui êtes-vous dans ce fichier ?"><select value={me} onChange={e => setMe(e.target.value)}>{ath.map(a => <option key={a} value={a}>{a}</option>)}</select></Field>
         <Field label="Duo de destination"><select value={team} onChange={e => setTeam(e.target.value)}>{mine.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}<option value="">Solo</option></select></Field>
+        {ath.length > 1 && !(mine.find(t => t.id === team) || { members: [] }).members.some(m => m.user_id !== user.id) && <Field label="Prénom de l’autre athlète" sub="Il rejoindra le duo plus tard"><input value={otherName} placeholder={ath.find(a => a !== me) === 'L' ? 'Laurent' : ath.find(a => a !== me) === 'P' ? 'Pierre' : 'Partenaire'} onChange={e => setOtherName(e.target.value)} /></Field>}
         <div className="row"><span className="label"><span className="t">Inclure les séances d’exemple</span></span><Switch checked={ex} onChange={setEx} label="Exemples" /></div>
       </List>
-      <p className="foot">La stratégie de relais et vos zones cardio sont aussi reprises.</p>
+      <p className="foot">La stratégie de relais et vos zones cardio sont aussi reprises. Pour un duo : créez d’abord le duo (onglet Équipe) puis importez dedans ; votre partenaire retrouvera ses temps et son cardio en rejoignant le duo avec le code. Un nouvel import ne crée pas de doublon.</p>
       <button className="btn block" style={{ marginTop: 12 }} disabled={!!busy} onClick={run}>{busy || 'Importer'}</button>
     </>}
     {err && <p className="err">{err}</p>}
