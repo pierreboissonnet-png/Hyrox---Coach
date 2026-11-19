@@ -343,6 +343,12 @@ drop policy if exists p_read on public.profiles;
 create policy p_read on public.profiles for select using (id = auth.uid() or public.shares_team(id) or public.shares_session(id));
 drop policy if exists p_write on public.profiles;
 create policy p_write on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
+drop policy if exists p_ins on public.profiles;
+create policy p_ins on public.profiles for insert with check (id = auth.uid());
+-- Comptes créés avant l'exécution de ce script : on leur crée leur profil
+insert into public.profiles (id, display_name)
+select id, coalesce(raw_user_meta_data->>'display_name', split_part(email, '@', 1)) from auth.users
+on conflict (id) do nothing;
 
 -- Équipes : membres (actuels et anciens) ; modification par les membres actifs
 drop policy if exists t_read on public.teams;

@@ -26,6 +26,7 @@ const supaApi = {
   },
   profiles: {
     get: async id => ok(await sb.from('profiles').select('*').eq('id', id).maybeSingle()),
+    create: async (id, name) => ok(await sb.from('profiles').upsert({ id, display_name: name || '' }, { onConflict: 'id', ignoreDuplicates: true }).select().single()),
     many: async ids => ids.length ? ok(await sb.from('profiles').select('*').in('id', ids)) : [],
     update: async (id, patch) => ok(await sb.from('profiles').update(patch).eq('id', id).select().single()),
   },

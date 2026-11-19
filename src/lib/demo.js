@@ -83,6 +83,7 @@ export const demoApi = {
   },
   profiles: {
     get: id => wait(D().profiles.find(p => p.id === id)),
+    create: id => wait(D().profiles.find(p => p.id === id)),
     many: ids => wait(D().profiles.filter(p => ids.includes(p.id))),
     update(id, patch) { const p = D().profiles.find(x => x.id === id); Object.assign(p, patch); commit(); return wait(p) },
   },

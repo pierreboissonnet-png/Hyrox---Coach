@@ -71,7 +71,17 @@ export default function App() {
     api.auth.user().then(setUser)
     return api.auth.onChange(u => setUser(u))
   }, [])
-  useEffect(() => { if (user) api.profiles.get(user.id).then(setProfile).catch(e => logError(e.message)); else setProfile(null) }, [user && user.id])
+  const [profErr, setProfErr] = useState(null), [profTry, setProfTry] = useState(0)
+  useEffect(() => {
+    if (!user) { setProfile(null); return }
+    setProfErr(null)
+    ;(async () => {
+      let p = await api.profiles.get(user.id)
+      // Compte créé avant l'installation de la base : le profil manque, on le crée
+      if (!p) p = await api.profiles.create(user.id, (user.user_metadata && user.user_metadata.display_name) || (user.email || '').split('@')[0])
+      setProfile(p)
+    })().catch(e => { logError('profil : ' + e.message); setProfErr(e.message) })
+  }, [user && user.id, profTry])
 
   const reload = useCallback(async (what = ['teams', 'races', 'sessions']) => {
     const out = {}
@@ -84,6 +94,14 @@ export default function App() {
   if (user === undefined) return <div className="auth"><img className="logo" src="/icon.svg" alt="" /></div>
   if (hash.startsWith('#/nouveau-mot-de-passe') && user) return <ToastHost><NewPassword /></ToastHost>
   if (!user) return <ToastHost><AuthPage /></ToastHost>
+  if (profErr) return <div className="auth"><img className="logo" src="/icon.svg" alt="" />
+    <h1>Connexion impossible</h1>
+    <p className="lead">Le profil n’a pas pu être chargé depuis la base de données.</p>
+    <div className="note mono small">{profErr}</div>
+    <p className="small muted">Le plus souvent, le script <b>supabase/schema.sql</b> n’a pas été exécuté entièrement dans Supabase (SQL Editor › New query › coller tout le fichier › Run).</p>
+    <button className="btn block" onClick={() => setProfTry(n => n + 1)}>Réessayer</button>
+    <button className="btn glass block" style={{ marginTop: 10 }} onClick={() => api.auth.signOut()}>Se déconnecter</button>
+  </div>
   if (!profile) return <div className="auth"><img className="logo" src="/icon.svg" alt="" /><p className="center muted">Chargement…</p></div>
   if (!profile.sex || !profile.birth_year || !profile.weight_kg) return <ToastHost><Onboarding profile={profile} onDone={setProfile} /></ToastHost>
 
