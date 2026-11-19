@@ -18,7 +18,8 @@ export function BugSheet({ shot, ctx, onClose }) {
       toast(`Merci ! Signalement n°${r.no} transmis aux administrateurs.`); onClose()
     } catch (e) { setBusy(false); setMsg(navigator.onLine === false ? 'Pas de réseau : réessayez une fois connecté (votre description reste dans le champ).' : /row-level|policy/i.test(e.message) ? 'Trop de signalements aujourd’hui : réessayez demain.' : e.message || 'Envoi impossible, réessayez.') }
   }
-  return <Sheet title="Signaler un problème" onClose={onClose}>
+  return <Sheet title="Signaler un problème" onClose={onClose} noBug actions={<button className="btn plain" onClick={send} disabled={busy}>Envoyer</button>}
+    footer={<div className="row-gap"><button className="btn glass" onClick={onClose}>Annuler</button><button className="btn" style={{ flex: 1 }} onClick={send} disabled={busy}>{busy ? 'Envoi…' : 'Envoyer'}</button></div>}>
     <div data-bugsheet>
       <p className="small muted" style={{ marginTop: 0 }}>Un bouton qui ne répond pas, un temps faux, un affichage bizarre ? Décrivez-le : les administrateurs recevront votre description, la capture de l’écran et les informations techniques utiles.</p>
       <p className="small" style={{ margin: '0 0 8px' }}>Écran : <b>{ctx.ecran}</b>{ctx.erreurs.length ? <span className="bad"> · {ctx.erreurs.length} erreur(s) technique(s) détectée(s)</span> : ''}</p>
@@ -29,7 +30,6 @@ export function BugSheet({ shot, ctx, onClose }) {
         {withImg && <img src={shot} alt="Capture de l'écran signalé" style={{ width: '100%', borderRadius: 16, marginTop: 10, boxShadow: 'var(--shadow)' }} />}
       </> : <p className="small muted">La capture d’écran n’a pas pu être réalisée sur cet appareil : votre description sera envoyée seule.</p>}
       {msg && <p className="err">{msg}</p>}
-      <div className="row-gap" style={{ marginTop: 14 }}><button className="btn glass" onClick={onClose}>Annuler</button><button className="btn" style={{ flex: 1 }} onClick={send} disabled={busy}>{busy ? 'Envoi…' : 'Envoyer'}</button></div>
       <p className="foot">Aucune donnée de santé n’est jointe.</p>
     </div>
   </Sheet>

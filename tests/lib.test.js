@@ -5,7 +5,7 @@ import { SEGS, N, defaultPlan, fmt, parseT } from '../src/lib/hyrox.js'
 import { emptyData, actions, split, stStats, nextIdx } from '../src/lib/session.js'
 import { summary, athleteStats, insights } from '../src/lib/analyze.js'
 import { predictDuo, estimatePartner } from '../src/lib/predict.js'
-import { buildProgram, phaseFor } from '../src/lib/program.js'
+import { buildProgram, phaseFor, wellNorm } from '../src/lib/program.js'
 import { targets } from '../src/lib/nutrition.js'
 import { cycleInfo, flag, MARKERS } from '../src/lib/health.js'
 import { convert, athletesIn, detect } from '../src/lib/importers.js'
@@ -40,8 +40,19 @@ test('prédiction : moyenne harmonique et estimation', () => {
 })
 test('programme, nutrition, santé', () => {
   assert.equal(phaseFor(1).id, 'course'); assert.equal(phaseFor(30).id, 'fondation')
-  const p = buildProgram({ weeks: 5, weak: ['wb'], wellbeing: { fatigue: 5 }, perWeek: 4 })
+  // Forme 0–5 : une seule mauvaise journée n'adapte qu'aujourd'hui et demain (lundi = 0 → seuil du lundi remplacé)
+  const E = (day, d) => ({ day, data: { ...d, v: 2 } })
+  const base = buildProgram({ weeks: 10, perWeek: 4 })
+  const p1 = buildProgram({ weeks: 10, perWeek: 4, well: [E('2026-11-16', { fatigue: 5, sleep: 3, soreness: 1 })], todayISO: '2026-11-16', today: 0 })
+  assert.ok(!p1.light); assert.equal(p1.days[0].key, 'z2'); assert.equal(base.days[0].key, 'seuil'); assert.equal(p1.days[3].key, base.days[3].key)
+  const p2 = buildProgram({ weeks: 10, perWeek: 4, well: [E('2026-11-16', { fatigue: 3, sleep: 3, soreness: 1 })], todayISO: '2026-11-16', today: 0 })
+  assert.equal(p2.days[0].key, 'seuil'); assert.ok(p2.days[0].min < base.days[0].min)
+  // Semaine allégée seulement sur la moyenne de 5 jours (≥ 3 saisies)
+  const bad = ['2026-11-12', '2026-11-13', '2026-11-14', '2026-11-15', '2026-11-16'].map(d => E(d, { fatigue: 4, sleep: 2, soreness: 3 }))
+  const p = buildProgram({ weeks: 5, weak: ['wb'], well: bad, todayISO: '2026-11-16', today: 0, perWeek: 4 })
   assert.equal(p.days.length, 7); assert.ok(p.light); assert.ok(!p.days.some(d => d.key === 'seuil'))
+  // Anciennes saisies 1–5 converties : fatigue 5 → 5, sommeil 1 → 0
+  assert.deepEqual(wellNorm({ data: { fatigue: 5, sleep: 1, soreness: 3, mood: 3 } }), { fatigue: 5, sleep: 0, soreness: 2.5, mood: 2.5, v: 2 })
   const t = targets({ sex: 'M', weight_kg: 80, height_cm: 180, birth_year: 1986 }); assert.equal(t.prot, 144)
   const c = cycleInfo(['2026-09-01', '2026-09-29', '2026-10-27'], new Date('2026-11-05T12:00'))
   assert.equal(c.len, 28); assert.equal(c.day, 10)

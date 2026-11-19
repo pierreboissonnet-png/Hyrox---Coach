@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api, setDemo, COACH_MODE } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Switch, Sheet, Empty, Icon, Stat, useToast, useLoad } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Switch, Sheet, Empty, Icon, Stat, useToast, useLoad, parseNum } from '../ui.jsx'
 import { LineChart, Bars } from '../charts.jsx'
 import { durationMin, fmtH, sleepStats, sleepAdvice, readAppleSleep } from '../lib/sleep.js'
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
-import { buildProgram, DRILLS } from '../lib/program.js'
+import { buildProgram, DRILLS, wellNorm } from '../lib/program.js'
 import { customInsights, trainingLoad, sessionKcal, sessionMinutes, dayTypeFromKcal } from '../lib/load.js'
 import { isCustom, fmtTarget, newBlock } from '../lib/custom.js'
 import { targets, DAY_TYPES, MEALS, SUPPLEMENTS, ANTI_DOPING, raceDay } from '../lib/nutrition.js'
@@ -14,7 +14,7 @@ import { MARKERS, markersFor, refOf, flag, cycleInfo, PHASE_LABEL, PHASE_COLOR, 
 import { summary, hrBySegment, cyclePerformance } from '../lib/analyze.js'
 import { zonesOf } from '../lib/hr.js'
 import { detect, athletesIn, convert } from '../lib/importers.js'
-import { upcoming, plansOf, activeTeams, RACE_TYPE } from './common.js'
+import { upcoming, plansOf, activeTeams, RACE_TYPE, mainRace } from './common.js'
 import { slotsOf } from './Teams.jsx'
 
 export function Me() {
@@ -44,7 +44,7 @@ export function Me() {
 // ---------------- Programme ----------------
 export function Program() {
   const { profile, races, sessions, teams } = useApp()
-  const next = upcoming(races)[0]
+  const next = mainRace(races)   // objectif principal (A), sinon la prochaine course
   const [perWeek, setPerWeek] = useState(4)
   const well = useLoad(() => profile.consent_health ? api.journal.list('wellbeing') : [], [])
   const sleep = useLoad(() => profile.consent_health ? api.journal.list('sleep') : [], [])
@@ -56,23 +56,48 @@ export function Program() {
   const last = sessions.find(s => !isCustom(s) && Object.values(s.athletes || {}).includes(profile.id))
   const sum = last ? summary(last, plans[last.team_id]) : null
   const hr = useLoad(async () => { if (!last) return null; const rows = await api.hr.list(last.id); const r = rows.find(x => x.user_id === profile.id); return r ? hrBySegment(last, r, profile) : null }, [last && last.id])
-  const w = (well.data || [])[0], crp = ((blood.data || []).find(b => b.data.crp != null) || {}).data
+  const crp = ((blood.data || []).find(b => b.data.crp != null) || {}).data
   const ci = female ? cycleInfo(cyc.data || []) : null
   const monday = new Date(); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
+  const isoOf = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10)
+  const weekDays = Array.from({ length: 7 }, (_, i) => isoOf(new Date(monday.getTime() + i * 864e5)))
+  const doneJ = useLoad(() => api.journal.list('program_done'), [])
+  const doneRow = (doneJ.data || []).find(e => e.day === weekDays[0])
+  const manual = (doneRow && doneRow.data && doneRow.data.done) || []
+  const [saving, setSaving] = useState(false), toast = useToast()
   const cycleDays = female && (cyc.data || []).length ? Array.from({ length: 7 }, (_, i) => { const d = new Date(monday.getTime() + i * 864e5); return phaseOn(cyc.data, new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10)) }) : null
   const ci2 = useMemo(() => customInsights(sessions, profile.id), [sessions])
   const tl = useMemo(() => trainingLoad(sessions, profile.id), [sessions])
   const weakHy = sum ? sum.stations.filter(x => x.d != null && x.d > 5).sort((a, b) => b.d - a.d).map(x => x.id) : []
   const p = buildProgram({ cycleDays, weeks: next ? Math.ceil(daysUntil(next.race_date) / 7) : null, format: next && next.format, perWeek,
     weak: [...new Set([...weakHy, ...ci2.weakSt])], e1rm: ci2.e1rm, loadRatio: tl.chronic > 30 ? tl.ratio : null,
-    z5: hr.data ? hr.data.zones[4] : null, wellbeing: w && w.data, cycle: ci, crp: crp ? +crp.crp : null, sleepAvg: sst ? sst.avg : null })
+    z5: hr.data ? hr.data.zones[4] : null, well: well.data || [], todayISO: todayISO(), today: (new Date().getDay() + 6) % 7, cycle: ci, crp: crp ? +crp.crp : null, sleepAvg: sst ? sst.avg : null })
   const today = (new Date().getDay() + 6) % 7
+  // Séances réellement enregistrées ce jour-là (cochées automatiquement)
+  const logged = weekDays.map(d => sessions.some(s => s.session_date === d && Object.values(s.athletes || {}).includes(profile.id)))
+  const isDone = i => manual.includes(i) || logged[i]
+  const planned = p.days.map((d, i) => i).filter(i => p.days[i].key !== 'repos')
+  const nDone = planned.filter(isDone).length
+  async function toggle(i) {
+    if (saving || logged[i]) return
+    const next = manual.includes(i) ? manual.filter(x => x !== i) : [...manual, i].sort()
+    setSaving(true)
+    try {
+      const row = doneRow ? await api.journal.update(doneRow.id, { data: { done: next } }) : await api.journal.add({ kind: 'program_done', day: weekDays[0], data: { done: next } })
+      doneJ.set([row, ...(doneJ.data || []).filter(e => e.id !== row.id)])
+    } catch (e) { toast('Enregistrement impossible : ' + e.message) } finally { setSaving(false) }
+  }
   return <Page back="#/moi" title="Programme" subtitle={p.phase.label + (next ? ` · ${next.name} dans ${daysUntil(next.race_date)} j` : '')}>
     <Seg value={perWeek} onChange={setPerWeek} options={[[3, '3 séances'], [4, '4'], [5, '5'], [6, '6']]} />
     <div className="glass card">{p.notes.map((n, i) => <div className="tip" key={i}><span className={'dot ' + (i === 0 ? '' : 'bad')} /><span className="small">{n}</span></div>)}</div>
+    {planned.length > 0 && <div className="row-gap small" style={{ margin: '4px 4px 8px' }}><b>{nDone}/{planned.length} séances faites cette semaine</b><span className="spacer" /><span className="progress" style={{ width: 120, height: 6, borderRadius: 3, background: 'var(--sep)', overflow: 'hidden', display: 'inline-block' }}><i style={{ display: 'block', height: '100%', width: (nDone / planned.length * 100) + '%', background: 'var(--good, #30d158)' }} /></span></div>}
     <List>{p.days.map((d, i) => <div className="row stack" key={d.day} style={i === today ? { background: 'var(--accent-soft)' } : null}>
-      <div className="row-gap"><b>{d.day}</b>{i === today && <span className="badge accent">Aujourd’hui</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span></div>
-      <div style={{ fontWeight: 600 }}>{d.title}</div><div className="small muted">{d.detail}</div>
+      <div className="row-gap"><b>{d.day}</b>{i === today && <span className="badge accent">Aujourd’hui</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
+        {d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0, cursor: logged[i] ? 'default' : 'pointer' }} title={logged[i] ? 'Séance enregistrée dans l’app ce jour-là' : 'Cocher quand la séance est faite'}>
+          <input type="checkbox" checked={isDone(i)} disabled={logged[i] || saving} onChange={() => toggle(i)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
+      <div style={{ fontWeight: 600, textDecoration: isDone(i) && d.key !== 'repos' ? 'line-through' : 'none', opacity: isDone(i) && d.key !== 'repos' ? .65 : 1 }}>{d.title}</div><div className="small muted">{d.detail}</div>
+      {logged[i] && d.key !== 'repos' && <div className="tiny muted">Cochée automatiquement : séance enregistrée ce jour-là.</div>}
+      {d.adapted && !d.cycle && <div className="small muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</div>}
       {d.cycle && <div className="small" style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><span className="badge" style={{ background: PHASE_COLOR[d.cycle.phase] + '33', color: 'var(--ink)', flexShrink: 0 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: PHASE_COLOR[d.cycle.phase], display: 'inline-block' }} />J{d.cycle.day} · {PHASE_LABEL[d.cycle.phase]}</span>{d.adapted && <span className="muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</span>}</div>}
     </div>)}</List>
     {ci2.targets.length > 0 && <>
@@ -279,10 +304,16 @@ function Weight() {
   const [f, setF] = useState({ day: todayISO(), kg: '', fat: '' })
   const pts = [...(j.data || [])].reverse()
   async function add() {
-    if (!(+f.kg > 30)) return
-    await api.journal.add({ kind: 'weight', day: f.day, data: { kg: +String(f.kg).replace(',', '.'), fat: f.fat ? +String(f.fat).replace(',', '.') : null } })
-    if (f.day >= todayISO()) setProfile(await api.profiles.update(profile.id, { weight_kg: +String(f.kg).replace(',', '.') }))
-    setF({ ...f, kg: '', fat: '' }); j.reload(); toast('Pesée enregistrée')
+    const kg = parseNum(f.kg), fat = parseNum(f.fat)
+    if (kg == null) return toast(String(f.kg).trim() ? 'Poids illisible : saisissez par exemple 72,5' : 'Saisissez votre poids en kg')
+    if (kg < 30 || kg > 250) return toast('Poids hors limites (30 à 250 kg)')
+    if (String(f.fat).trim() && (fat == null || fat < 2 || fat > 70)) return toast('Masse grasse : entre 2 et 70 %')
+    if (!f.day) return toast('Choisissez une date')
+    try {
+      await api.journal.add({ kind: 'weight', day: f.day, data: { kg, fat } })
+      if (f.day >= todayISO()) setProfile(await api.profiles.update(profile.id, { weight_kg: kg }))
+      setF({ ...f, kg: '', fat: '' }); j.reload(); toast('Pesée enregistrée')
+    } catch (e) { toast('Enregistrement impossible : ' + e.message) }
   }
   const t0 = pts.length ? new Date(pts[0].day).getTime() : 0
   return <>
@@ -382,14 +413,28 @@ function Cycle() {
 }
 function Wellbeing() {
   const j = useLoad(() => api.journal.list('wellbeing'), []), toast = useToast()
-  const [v, setV] = useState({ fatigue: 3, sleep: 3, soreness: 2, mood: 3 })
-  const L = { fatigue: ['Fatigue', 'aucune', 'extrême'], sleep: ['Sommeil', 'très mauvais', 'excellent'], soreness: ['Courbatures', 'aucune', 'fortes'], mood: ['Moral', 'bas', 'excellent'] }
+  const [v, setV] = useState({ fatigue: 1, sleep: 3, soreness: 1, mood: 3 })
+  const L = {
+    fatigue: ['Fatigue', ['Aucune', 'Très légère', 'Légère', 'Modérée', 'Forte', 'Extrême']],
+    sleep: ['Qualité du sommeil', ['Très mauvais', 'Mauvais', 'Moyen', 'Correct', 'Bon', 'Excellent']],
+    soreness: ['Courbatures', ['Aucune', 'Très légères', 'Légères', 'Modérées', 'Fortes', 'Très fortes']],
+    mood: ['Moral', ['Très bas', 'Bas', 'Moyen', 'Correct', 'Bon', 'Excellent']],
+  }
+  const todayRow = (j.data || []).find(e => e.day === todayISO())
+  async function save() {
+    try {
+      const data = { ...v, v: 2 }
+      if (todayRow) await api.journal.update(todayRow.id, { data }); else await api.journal.add({ kind: 'wellbeing', day: todayISO(), data })
+      j.reload(); toast(todayRow ? 'Forme du jour mise à jour' : 'Forme du jour enregistrée')
+    } catch (e) { toast('Enregistrement impossible : ' + e.message) }
+  }
+  const lbl = (k, x) => x == null ? '–' : L[k][1][Math.max(0, Math.min(5, Math.round(x)))].toLowerCase()
   return <>
-    <List>{Object.entries(L).map(([k, [l, a, b]]) => <div className="row stack" key={k}><div className="row-gap"><span>{l}</span><span className="spacer" /><b className="num">{v[k]}/5</b></div>
-      <input type="range" min="1" max="5" value={v[k]} onChange={e => setV({ ...v, [k]: +e.target.value })} aria-label={l} /><div className="row-gap tiny faint"><span>{a}</span><span className="spacer" /><span>{b}</span></div></div>)}</List>
-    <button className="btn block" style={{ marginTop: 12 }} onClick={async () => { await api.journal.add({ kind: 'wellbeing', day: todayISO(), data: v }); j.reload(); toast('Forme du jour enregistrée') }}>Enregistrer la forme du jour</button>
-    <p className="foot">Fatigue ou courbatures à 4–5, ou sommeil à 1–2 : le programme passe en semaine allégée.</p>
-    <JournalList items={j.data} render={e => `Fatigue ${e.data.fatigue} · sommeil ${e.data.sleep} · courbatures ${e.data.soreness} · moral ${e.data.mood}`} onDel={j.reload} />
+    <List>{Object.entries(L).map(([k, [l, names]]) => <div className="row stack" key={k}><div className="row-gap"><span>{l}</span><span className="spacer" /><b>{names[v[k]]}</b><span className="num small muted">{v[k]}/5</span></div>
+      <input type="range" min="0" max="5" step="1" value={v[k]} onChange={e => setV({ ...v, [k]: +e.target.value })} aria-label={l} aria-valuetext={names[v[k]]} /><div className="row-gap tiny faint"><span>0 · {names[0].toLowerCase()}</span><span className="spacer" /><span>5 · {names[5].toLowerCase()}</span></div></div>)}</List>
+    <button className="btn block" style={{ marginTop: 12 }} onClick={save}>{todayRow ? 'Mettre à jour la forme du jour' : 'Enregistrer la forme du jour'}</button>
+    <p className="foot">Effet sur le programme : une fatigue ou des courbatures à 4–5 (ou un sommeil à 0–1) transforment seulement la séance intense d’aujourd’hui ou de demain en endurance facile ; à 3 (ou sommeil à 2), le volume baisse d’environ 20 %. La semaine entière n’est allégée que si la moyenne des 5 derniers jours (au moins 3 saisies) reste haute.</p>
+    <JournalList items={j.data} render={e => { const w = wellNorm(e); return `Fatigue ${lbl('fatigue', w.fatigue)} · sommeil ${lbl('sleep', w.sleep)} · courbatures ${lbl('soreness', w.soreness)} · moral ${lbl('mood', w.mood)}` }} onDel={j.reload} />
   </>
 }
 

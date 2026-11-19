@@ -15,6 +15,10 @@ export function profileOf(uid, teams, me) {
   return null
 }
 export const upcoming = races => races.filter(r => r.race_date >= todayISO()).sort((a, b) => a.race_date.localeCompare(b.race_date))
+/** Course qui pilote le programme : le prochain objectif principal (A), sinon la prochaine course */
+export const mainRace = races => { const U = upcoming(races); return U.find(r => r.priority === 'A') || U[0] }
+export const PRIORITY = { A: 'Objectif principal', B: 'Course importante', C: 'Préparation' }
+export const teamName = (teams, id) => (teams.find(t => t.id === id) || {}).name
 export const RACE_TYPE = r => `${r.format === 'duo' ? 'Duo' : 'Solo'} · ${r.division === 'pro' ? 'Pro' : 'Open'}${r.category ? ' · ' + r.category : ''}`
 export const KIND = { entrainement: 'Entraînement', simulation: 'Simulation', course: 'Course' }
 

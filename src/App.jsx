@@ -64,6 +64,8 @@ export default function App() {
   }, [])
   useEffect(() => { addEventListener('hx-bug', openBug); return () => removeEventListener('hx-bug', openBug) }, [openBug])
 
+  // Badge « Powered by Netlify » (offre gratuite) : on décale la barre d'onglets s'il est présent
+  useEffect(() => { const f = () => document.documentElement.classList.toggle('nl-badge', !!document.getElementById('nl-badge-frame')); f(); const o = new MutationObserver(f); o.observe(document.body, { childList: true }); return () => o.disconnect() }, [])
   useEffect(() => { applySettings(settings); try { localStorage.setItem('hx-settings', JSON.stringify(settings)) } catch {} }, [settings])
   useEffect(() => { const m = matchMedia('(prefers-color-scheme: dark)'); const f = () => applySettings(settings); m.addEventListener('change', f); return () => m.removeEventListener('change', f) }, [settings])
   useEffect(() => {

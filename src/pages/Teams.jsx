@@ -102,6 +102,7 @@ export function TeamDetail({ id }) {
     <List>
       <Row icon="chart" color="#5e5ce6" title="Objectifs et stratégie de relais" sub={`Total visé ${fmt(objTotal)} · course ${plan.runKm} km`} href={'#/equipe/' + t.id + '/plan'} />
       <Row icon="timer" color="#0a84ff" title="Séances du duo" value={ts.length} href={'#/seances?team=' + t.id} />
+      {active && <Row icon="plus" color="#ff9f0a" title="Programmer un Hyrox avec ce duo" onClick={() => { try { localStorage.setItem('hx-race-prefill', JSON.stringify({ format: 'duo', team_id: t.id, division: t.division, category: t.category })) } catch {} location.hash = '#/courses' }} />}
       {teamRaces.map(r => <Row key={r.id} icon="flag" color="#ff9f0a" title={r.name} sub={frDate(r.race_date) + ' · ' + RACE_TYPE(r)} value={r.goal_seconds ? fmt(r.goal_seconds) : ''} href="#/courses" />)}
     </List>
     {active && <><div className="row-gap" style={{ marginTop: 16 }}>

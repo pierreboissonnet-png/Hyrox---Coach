@@ -1,6 +1,6 @@
 // Signalements de bugs (même principe que l'appli Quiz CI BSPP) :
 // capture de l'écran au moment du clic, contexte technique, erreurs JavaScript et dernières actions.
-export const APP_VERSION = '1.0.0'
+export const APP_VERSION = '1.1.0'
 const errs = [], trail = []
 const push = (arr, max, item) => { arr.push(item); if (arr.length > max) arr.shift() }
 const hhmmss = () => new Date().toLocaleTimeString('fr-FR')
@@ -45,7 +45,7 @@ export async function bugShot() {
   const run = async () => {
     const { default: h2c } = await import('html2canvas')
     const bg = getComputedStyle(document.body).backgroundColor
-    const cv = await h2c(document.body, { backgroundColor: bg && bg !== 'rgba(0, 0, 0, 0)' ? bg : '#ffffff', x: scrollX, y: scrollY, width: innerWidth, height: innerHeight, windowWidth: document.documentElement.clientWidth, windowHeight: innerHeight, scale: Math.min(2, devicePixelRatio || 1), useCORS: true, logging: false, imageTimeout: 2500, ignoreElements: el => !!(el.matches && el.matches('.toast, .backdrop')) })
+    const cv = await h2c(document.body, { backgroundColor: bg && bg !== 'rgba(0, 0, 0, 0)' ? bg : '#ffffff', x: scrollX, y: scrollY, width: innerWidth, height: innerHeight, windowWidth: document.documentElement.clientWidth, windowHeight: innerHeight, scale: Math.min(2, devicePixelRatio || 1), useCORS: true, logging: false, imageTimeout: 2500, ignoreElements: el => !!(el.matches && el.matches('.toast, .backdrop')), onclone: doc => { const st = doc.createElement('style'); st.textContent = '*{-webkit-backdrop-filter:none!important;backdrop-filter:none!important} .glass{background:var(--glass-strong)!important}'; doc.head.appendChild(st) } })
     const w = Math.min(720, cv.width), h = Math.round(cv.height * w / cv.width), c2 = document.createElement('canvas')
     c2.width = w; c2.height = h; c2.getContext('2d').drawImage(cv, 0, 0, w, h)
     let url = c2.toDataURL('image/jpeg', 0.72); if (url.length > 850000) url = c2.toDataURL('image/jpeg', 0.45)

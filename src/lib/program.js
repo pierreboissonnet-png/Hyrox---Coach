@@ -26,15 +26,15 @@ export function phaseFor(weeks) {
  * @param {object} o
  *  weeks : semaines avant la prochaine course (ou null) ; format : 'solo'|'duo'
  *  weak : identifiants d'ateliers à travailler ; z5 : part du temps en zone 5 (0–1) sur la dernière séance
- *  wellbeing : {fatigue, sleep, soreness} de 1 à 5 ; cycle : {phase} ; crp : mg/L ; perWeek : 3 à 6
+ *  well : entrées « forme du jour » du journal (échelle 0–5) ; todayISO : date du jour ; cycle : {phase} ; crp : mg/L ; perWeek : 3 à 6
  */
 export function buildProgram(o = {}) {
   const ph = phaseFor(o.weeks), perWeek = Math.min(6, Math.max(3, o.perWeek || 4))
   const weak = (o.weak || []).filter(id => STATION[id]).slice(0, 2)
   const notes = [ph.note]
-  const w = o.wellbeing || {}
   let light = false
-  if ((w.fatigue || 0) >= 4 || (w.sleep && w.sleep <= 2) || (w.soreness || 0) >= 4) { light = true; notes.push('Fatigue, sommeil ou courbatures signalés : semaine allégée, les séances intenses deviennent de l’endurance facile.') }
+  const W = wellbeingImpact(o.well || [], o.todayISO)
+  if (W.week) { light = true; notes.push(`Forme moyenne des 5 derniers jours dégradée (${W.week}) : semaine allégée, les séances intenses deviennent de l’endurance facile.`) }
   if (o.sleepAvg != null && o.sleepAvg < 360) { light = true; notes.push(`Sommeil moyen de ${Math.floor(o.sleepAvg / 60)} h ${String(Math.round(o.sleepAvg % 60)).padStart(2, '0')} sur 7 nuits : semaine allégée, priorité au sommeil (objectif 8 h).`) }
   else if (o.sleepAvg != null && o.sleepAvg < 420) notes.push(`Sommeil moyen de ${Math.floor(o.sleepAvg / 60)} h ${String(Math.round(o.sleepAvg % 60)).padStart(2, '0')} : visez au moins 7 h 30, surtout les veilles de séances intenses.`)
   if (o.loadRatio != null && o.loadRatio > 1.5) { light = true; notes.push(`Charge des 7 derniers jours ${o.loadRatio.toFixed(1).replace('.', ',')} fois supérieure à votre moyenne des 4 semaines : semaine allégée pour limiter le risque de blessure.`) }
@@ -75,6 +75,17 @@ export function buildProgram(o = {}) {
   const slots = { 3: [0, 2, 5], 4: [0, 1, 3, 5], 5: [0, 1, 3, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[perWeek]
   let days = DAYS.map((d, i) => { const k = slots.indexOf(i); return k >= 0 ? { day: d, ...S[keys[k]], key: keys[k] } : { day: d, ...S.repos, key: 'repos' } })
   if (o.cycleDays) days = days.map((d, i) => adaptToCycle(d, o.cycleDays[i], S))
+  // Forme du jour : n'adapte que la séance du jour et celle du lendemain
+  if (W.day && o.today != null && !light) {
+    let touched = false
+    days = days.map((d, i) => {
+      if (i !== o.today && i !== o.today + 1) return d
+      if (W.day.hard && INTENSE.includes(d.key)) { touched = true; return { ...S.z2, day: d.day, key: 'z2', cycle: d.cycle, was: d.title, adapted: 'Adapté à votre forme du jour (' + W.day.why + ')' } }
+      if (W.day.mid && d.key !== 'repos') { touched = true; return { ...d, min: Math.round(d.min * 0.8 / 5) * 5, adapted: 'Volume réduit d’environ 20 % (' + W.day.why + ')' } }
+      return d
+    })
+    if (touched) notes.push(W.day.hard ? `Forme du jour (${W.day.why}) : la séance intense d’aujourd’hui ou de demain passe en endurance facile. Le reste de la semaine est inchangé.` : `Forme du jour (${W.day.why}) : volume réduit d’environ 20 % aujourd’hui et demain, intensité conservée.`)
+  }
   return { phase: ph, days, notes, light, weak }
 }
 
@@ -112,3 +123,40 @@ function forceDetail(rm, phase) {
     .filter(([k]) => rm && rm[k]).map(([k, l]) => `${l} ${reps} à ≈ ${Math.round(rm[k] * pct / 2.5) * 2.5} kg`)
   return L.length ? L.join(' · ') + ` (${Math.round(pct * 100)} % du 1RM estimé). Fentes et gainage en fin de séance.` : 'Squat, soulevé de terre, fentes, tirage ; 4 × 6–8. Finir par 10 min de gainage.'
 }
+
+/** Entrée « forme du jour » ramenée à l'échelle 0–5 (anciennes saisies 1–5 converties) */
+export function wellNorm(e) {
+  const d = (e && e.data) || {}
+  if (d.v === 2) return d
+  const c = x => x == null ? null : Math.round((x - 1) * 1.25 * 10) / 10
+  return { fatigue: c(d.fatigue), sleep: c(d.sleep), soreness: c(d.soreness), mood: c(d.mood), v: 2 }
+}
+const isoMinus = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10) }
+/**
+ * Impact de la forme déclarée (échelle 0–5, sommeil : 0 = très mauvais, 5 = excellent)
+ *  - jour : saisie d'aujourd'hui ou d'hier → adapte seulement aujourd'hui et demain
+ *      fatigue ou courbatures ≥ 4, ou sommeil ≤ 1 → séance intense remplacée par de l'endurance facile
+ *      fatigue ou courbatures = 3, ou sommeil = 2 → volume −20 %
+ *  - semaine : moyenne des 5 derniers jours (au moins 3 saisies) avec fatigue/courbatures ≥ 3,5 ou sommeil ≤ 1,5
+ */
+export function wellbeingImpact(entries, today) {
+  if (!today || !entries.length) return { day: null, week: null }
+  const recent = entries.filter(e => e.day && e.day >= isoMinus(today, 1) && e.day <= today).sort((a, b) => b.day.localeCompare(a.day) || String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
+  let day = null
+  if (recent) {
+    const w = wellNorm(recent), f = w.fatigue || 0, so = w.soreness || 0, sl = w.sleep
+    const why = [f >= 3 && 'fatigue ' + fmt1(f), so >= 3 && 'courbatures ' + fmt1(so), sl != null && sl <= 2 && 'sommeil ' + fmt1(sl)].filter(Boolean).join(', ') + '/5'
+    if (f >= 4 || so >= 4 || (sl != null && sl <= 1)) day = { hard: true, why }
+    else if (f >= 3 || so >= 3 || (sl != null && sl <= 2)) day = { mid: true, why }
+  }
+  const last5 = entries.filter(e => e.day && e.day >= isoMinus(today, 4) && e.day <= today).map(wellNorm)
+  let week = null
+  if (last5.length >= 3) {
+    const avg = k => { const v = last5.map(x => x[k]).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null }
+    const f = avg('fatigue'), so = avg('soreness'), sl = avg('sleep')
+    if ((f != null && f >= 3.5) || (so != null && so >= 3.5) || (sl != null && sl <= 1.5))
+      week = [f != null && f >= 3.5 && 'fatigue ' + fmt1(f), so != null && so >= 3.5 && 'courbatures ' + fmt1(so), sl != null && sl <= 1.5 && 'sommeil ' + fmt1(sl)].filter(Boolean).join(', ') + '/5'
+  }
+  return { day, week }
+}
+const fmt1 = x => String(Math.round(x * 10) / 10).replace('.', ',')

@@ -197,3 +197,11 @@ input[type=range] { width: 100%; accent-color: var(--accent) }
 .bugbtn { color: var(--ink-2) }
 .bugbtn.busy { animation: pulse 1s infinite }
 @keyframes pulse { 50% { opacity: .35 } }
+
+/* pied de feuille toujours visible (boutons d'envoi) */
+.sheet-foot { position: sticky; bottom: 0; margin: 12px -16px calc(-20px - env(safe-area-inset-bottom)); padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--glass-strong); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); border-top: .5px solid var(--sep); z-index: 2 }
+/* badge « Powered by Netlify » : on remonte la barre d'onglets pour qu'il ne la masque pas */
+.nl-badge .tabbar { bottom: calc(62px + env(safe-area-inset-bottom)) }
+.nl-badge .page { padding-bottom: calc(160px + env(safe-area-inset-bottom)) }
+.nl-badge .sheet { padding-bottom: calc(76px + env(safe-area-inset-bottom)) }
+.nl-badge .sheet-foot { margin-bottom: calc(-76px - env(safe-area-inset-bottom)); padding-bottom: calc(66px + env(safe-area-inset-bottom)) }

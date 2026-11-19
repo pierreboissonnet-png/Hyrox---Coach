@@ -78,16 +78,20 @@ export function Switch({ checked, onChange, label }) {
 export function Seg({ value, options, onChange }) {
   return <div className="seg" role="group">{options.map(([v, l]) => <button key={v} aria-pressed={value === v} onClick={() => onChange(v)}>{l}</button>)}</div>
 }
-export function Sheet({ title, onClose, children, actions }) {
+export function Sheet({ title, onClose, children, actions, footer, noBug }) {
   useEffect(() => { const k = e => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k) }, [onClose])
   return <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
     <div className="sheet glass" role="dialog" aria-modal="true" aria-label={title}>
       <div className="grab" />
-      <div className="sheet-head"><button className="btn plain" onClick={onClose}>Fermer</button><h3>{title}</h3><span>{actions || <span style={{ width: 60, display: 'inline-block' }} />}</span></div>
+      <div className="sheet-head"><button className="btn plain" onClick={onClose}>Fermer</button><h3>{title}</h3>
+        <span className="row-gap" style={{ gap: 4, flexWrap: 'nowrap' }}>{actions || null}{!noBug && <button className="icon-btn bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème" style={{ width: 34, height: 34 }}><Icon name="bug" size={18} /></button>}{!actions && noBug && <span style={{ width: 60, display: 'inline-block' }} />}</span></div>
       {children}
+      {footer && <div className="sheet-foot">{footer}</div>}
     </div>
   </div>
 }
+/** Nombre saisi au clavier (virgule ou point) ; null si vide ou invalide */
+export const parseNum = v => { if (v == null || String(v).trim() === '') return null; const n = +String(v).trim().replace(/\s/g, '').replace(',', '.'); return Number.isFinite(n) ? n : null }
 export const Empty = ({ icon = 'spark', children }) => <div className="empty"><Icon name={icon} />{children}</div>
 export function Stat({ k, v, d, tone }) {
   return <div className="stat glass"><div className="k">{k}</div><div className="v num">{v}</div>{d != null && <div className={'d num ' + (tone || '')}>{d}</div>}</div>
