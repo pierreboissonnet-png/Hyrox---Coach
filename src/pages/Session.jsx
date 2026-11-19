@@ -10,6 +10,7 @@ import { summary, insights, hrBySegment, slotOf, segmentDetail, cyclePerformance
 import { phaseOn, adjustTime, PHASE_LABEL, PHASE_COLOR } from '../lib/health.js'
 import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression } from '../lib/custom.js'
 import { CustomChrono, CustomResults, CustomStats, hrBySteps } from './Custom.jsx'
+import { StretchSuggest } from './Body.jsx'
 import { localCoach } from '../lib/coachLocal.js'
 import { readHRFile, series, zonesOf, ZONE_NAMES, seriesFromSamples } from '../lib/hr.js'
 import { KIND, plansOf, profileOf, nameOf, isKeeperOnly, isAthlete, athleteNames } from './common.js'
@@ -417,6 +418,7 @@ function Stats({ s, d, plan, duo, who }) {
       </div>}
       <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => askStation(x)} disabled={askBusy === x.id}>{askBusy === x.id ? 'Analyse…' : 'Conseil du coach sur cet atelier'}</button>
     </div>)}</List>
+    <StretchSuggest s={s} />
   </>
 }
 

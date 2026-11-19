@@ -29,7 +29,7 @@ export function phaseFor(weeks) {
  *  well : entrées « forme du jour » du journal (échelle 0–5) ; todayISO : date du jour ; cycle : {phase} ; crp : mg/L ; perWeek : 3 à 6
  */
 export function buildProgram(o = {}) {
-  const ph = phaseFor(o.weeks), perWeek = Math.min(6, Math.max(3, o.perWeek || 4))
+  const ph = o.phase || phaseFor(o.weeks), perWeek = Math.min(6, Math.max(3, o.perWeek || 4))
   const weak = (o.weak || []).filter(id => STATION[id]).slice(0, 2)
   const notes = [ph.note]
   let light = false
@@ -74,13 +74,15 @@ export function buildProgram(o = {}) {
   const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
   const slots = { 3: [0, 2, 5], 4: [0, 1, 3, 5], 5: [0, 1, 3, 4, 5], 6: [0, 1, 2, 3, 4, 5] }[perWeek]
   let days = DAYS.map((d, i) => { const k = slots.indexOf(i); return k >= 0 ? { day: d, ...S[keys[k]], key: keys[k] } : { day: d, ...S.repos, key: 'repos' } })
+  // Semaine issue du plan jusqu'à la course : on garde ses séances et on n'applique que les adaptations du moment
+  if (o.baseDays) days = o.baseDays.map(d => light && INTENSE.includes(d.key) ? { ...d, ...S.z2, key: 'z2', blocks: null, was: d.title, adapted: 'Semaine allégée (voir les raisons ci-dessus)' } : { ...d })
   if (o.cycleDays) days = days.map((d, i) => adaptToCycle(d, o.cycleDays[i], S))
   // Forme du jour : n'adapte que la séance du jour et celle du lendemain
   if (W.day && o.today != null && !light) {
     let touched = false
     days = days.map((d, i) => {
       if (i !== o.today && i !== o.today + 1) return d
-      if (W.day.hard && INTENSE.includes(d.key)) { touched = true; return { ...S.z2, day: d.day, key: 'z2', cycle: d.cycle, was: d.title, adapted: 'Adapté à votre forme du jour (' + W.day.why + ')' } }
+      if (W.day.hard && INTENSE.includes(d.key)) { touched = true; return { ...S.z2, day: d.day, date: d.date, focus: d.focus, blocks: null, key: 'z2', cycle: d.cycle, was: d.title, adapted: 'Adapté à votre forme du jour (' + W.day.why + ')' } }
       if (W.day.mid && d.key !== 'repos') { touched = true; return { ...d, min: Math.round(d.min * 0.8 / 5) * 5, adapted: 'Volume réduit d’environ 20 % (' + W.day.why + ')' } }
       return d
     })
@@ -90,12 +92,12 @@ export function buildProgram(o = {}) {
 }
 
 // ---------- adaptation au cycle menstruel ----------
-const INTENSE = ['seuil', 'compromis', 'simu', 'rappel']
+const INTENSE = ['seuil', 'compromis', 'simu', 'rappel', 'allure']
 /** Ajuste une journée selon la phase du cycle (c = {phase, day, symptoms}) */
 export function adaptToCycle(d, c, S) {
   if (!c || !c.phase) return d
   const out = { ...d, cycle: c }
-  const swap = (key, why) => ({ ...S[key], key, day: d.day, cycle: c, adapted: why, was: d.title })
+  const swap = (key, why) => ({ ...S[key], key, day: d.day, date: d.date, focus: d.focus, blocks: null, cycle: c, adapted: why, was: d.title })
   if (c.phase === 'menstruelle') {
     if (INTENSE.includes(d.key) && (c.day <= 2 || c.symptoms)) return swap('z2', `J${c.day} des règles${c.symptoms ? ' (' + c.symptoms + ')' : ''} : séance intense remplacée par de l’endurance facile. Si vous vous sentez bien, gardez la séance prévue.`)
     if (INTENSE.includes(d.key)) out.adapted = 'Règles : gardez la séance si vous vous sentez bien, sinon passez en zone 2 ; hydratez-vous davantage.'

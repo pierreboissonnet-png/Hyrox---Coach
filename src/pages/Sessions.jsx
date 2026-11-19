@@ -6,24 +6,29 @@ import { DeltaBars } from '../charts.jsx'
 import { SEGS, fmt, fd, frDate, todayISO, tone, normPlan } from '../lib/hyrox.js'
 import { emptyData, normData, split } from '../lib/session.js'
 import { summary } from '../lib/analyze.js'
-import { isCustom, customSummary, exLabel } from '../lib/custom.js'
+import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/custom.js'
+import { QuickSheet } from './Activity.jsx'
 import { activeTeams, KIND, plansOf, knownUsers, isKeeperOnly, athleteNames } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 
+const tomorrow = () => { const d = new Date(Date.now() + 864e5); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10) }
 const qs = () => new URLSearchParams((location.hash.split('?')[1]) || '')
 
 export function Sessions() {
   const { sessions, teams, loaded, profile } = useApp()
   const [team, setTeam] = useState(qs().get('team') || 'all')
-  const [claim, setClaim] = useState(false)
+  const [claim, setClaim] = useState(false), [quick, setQuick] = useState(false)
   const plans = plansOf(teams)
   const keep = sessions.filter(s => isKeeperOnly(s, profile.id, teams))
   const mine = sessions.filter(s => !keep.includes(s))
-  const list = mine.filter(s => team === 'all' || (team === 'solo' ? !s.team_id : s.team_id === team))
+  const planned = mine.filter(s => isPlanned(s) && s.session_date >= todayISO()).sort((a, b) => a.session_date.localeCompare(b.session_date))
+  const list = mine.filter(s => !planned.includes(s)).filter(s => team === 'all' || (team === 'solo' ? !s.team_id : s.team_id === team))
   const opts = [['all', 'Toutes'], ...teams.map(t => [t.id, t.name]), ['solo', 'Solo']]
   const row = (s, k) => {
-    if (isCustom(s)) { const c = customSummary(s); return <Row key={s.id} icon="bolt" color={k ? '#30d158' : '#bf5af2'} title={k ? 'Pointage · ' + (athleteNames(s) || s.name) : s.name}
-      sub={`${frDate(s.session_date)} · spécialisée · ${[...new Set(c.steps.map(exLabel))].slice(0, 3).join(', ')}${c.complete ? '' : ` · ${c.done}/${c.n}`}`}
+    if (isQuick(s)) { const c = customSummary(s), st = c.steps[0] || {}, dn = (st.done || {}); return <Row key={s.id} icon="heart" color="#ff9f0a" title={s.name}
+      sub={`${frDate(s.session_date)} · activité · ${Math.round(c.total / 60)} min${dn.meters ? ' · ' + String(Math.round(dn.meters / 100) / 10).replace('.', ',') + ' km' : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`} href={'#/seance/' + s.id + '/temps'} /> }
+    if (isCustom(s)) { const c = customSummary(s), pl = isPlanned(s); return <Row key={s.id} icon={pl ? 'cal' : 'bolt'} color={k ? '#30d158' : pl ? '#8e8e93' : '#bf5af2'} title={k ? 'Pointage · ' + (athleteNames(s) || s.name) : s.name}
+      sub={`${frDate(s.session_date)} · ${pl ? (s.session_date < todayISO() ? 'prévue, non réalisée' : 'prévue') : 'personnalisée'} · ${[...new Set(c.steps.map(exLabel))].slice(0, 3).join(', ')}${c.complete || pl ? '' : ` · ${c.done}/${c.n}`}`}
       value={c.achievement != null ? Math.round(c.achievement * 100) + ' %' : ''} href={'#/seance/' + s.id + (k ? '/chrono' : '')} /> }
     const sum = summary(s, s.plan || plans[s.team_id]), done = sum.d.cp.filter(v => v != null).length
     return <Row key={s.id} icon={k ? 'timer' : s.kind === 'course' ? 'flag' : 'timer'} color={k ? '#30d158' : s.kind === 'course' ? '#ff9f0a' : s.kind === 'simulation' ? '#5e5ce6' : '#0a84ff'} title={k ? 'Pointage · ' + (athleteNames(s) || s.name) : s.name}
@@ -31,15 +36,21 @@ export function Sessions() {
       value={sum.all.n ? fmt(sum.all.t) : ''} href={'#/seance/' + s.id + (k ? '/chrono' : '')} />
   }
   return <Page title="Séances" actions={<><a className="icon-btn glass" href="#/comparer" aria-label="Comparer"><Icon name="compare" /></a><a className="icon-btn glass" href="#/seance/nouvelle" aria-label="Nouvelle séance"><Icon name="plus" /></a></>}>
-    <div className="row-gap" style={{ marginBottom: 10 }}>
+    <div className="row-gap" style={{ marginBottom: 8 }}>
       <a className="btn" style={{ flex: 1 }} href="#/seance/nouvelle"><Icon name="play" size={18} />Format Hyrox</a>
-      <a className="btn" style={{ flex: 1, background: '#bf5af2', boxShadow: 'none' }} href="#/seance/specifique"><Icon name="bolt" size={18} />Spécialisée</a>
+      <a className="btn" style={{ flex: 1, background: '#bf5af2', boxShadow: 'none' }} href="#/seance/specifique"><Icon name="bolt" size={18} />Personnalisée</a>
+    </div>
+    <div className="row-gap" style={{ marginBottom: 10 }}>
+      <button className="btn glass" style={{ flex: 1 }} onClick={() => setQuick(true)}><Icon name="plus" size={18} />Activité faite</button>
+      <a className="btn glass" style={{ flex: 1 }} href={'#/seance/specifique?date=' + tomorrow()}><Icon name="cal" size={18} />Planifier</a>
       <button className="btn glass" style={{ flex: 1 }} onClick={() => setClaim(true)}><Icon name="timer" size={18} />Pointer</button>
     </div>
+    {planned.length > 0 && <Sec title="Prévues"><List>{planned.map(s => <Row key={s.id} icon="cal" color="#5e5ce6" title={s.name} sub={`${s.session_date === todayISO() ? 'Aujourd’hui' : frDate(s.session_date)} · ${[...new Set(customSummary(s).steps.map(exLabel))].slice(0, 3).join(', ')}`} value={s.session_date === todayISO() ? 'Lancer' : ''} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
     {keep.length > 0 && <Sec title="Séances que je pointe"><List>{keep.map(s => row(s, true))}</List></Sec>}
     {opts.length > 2 && <Seg value={team} onChange={setTeam} options={opts} />}
     {!loaded ? <p className="muted">Chargement…</p> : list.length ? <List>{list.map(s => row(s, false))}</List> : <div className="glass card"><Empty icon="timer">Aucune séance.</Empty></div>}
     {claim && <ClaimSheet onClose={() => setClaim(false)} />}
+    {quick && <QuickSheet onClose={() => setQuick(false)} />}
   </Page>
 }
 
@@ -94,7 +105,7 @@ export function NewSession() {
     } catch (e) { setErr(e.message) }
   }
   return <Page back="#/seances" title="Nouvelle séance">
-    <List><Row icon="bolt" color="#bf5af2" title="Plutôt une séance spécialisée ?" sub="Exercices au choix (ateliers, course, squat, développé couché…) avec vos objectifs" href="#/seance/specifique" /></List>
+    <List><Row icon="bolt" color="#bf5af2" title="Plutôt une séance personnalisée ?" sub="Renfo, circuits, EMOM, course, ateliers… avec vos objectifs" href="#/seance/specifique" /></List>
     <h2 className="sec">Format</h2>
     <Seg value={f.format} onChange={v => setF({ ...f, format: v })} options={[['solo', 'Solo'], ['duo', 'Duo']]} />
     {f.format === 'duo' && (mine.length ? <List><Field label="Duo"><select value={f.team} onChange={e => setF({ ...f, team: e.target.value })}>{mine.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field></List>

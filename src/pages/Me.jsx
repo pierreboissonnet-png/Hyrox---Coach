@@ -16,6 +16,7 @@ import { zonesOf } from '../lib/hr.js'
 import { detect, athletesIn, convert } from '../lib/importers.js'
 import { upcoming, plansOf, activeTeams, RACE_TYPE, mainRace } from './common.js'
 import { slotsOf } from './Teams.jsx'
+import { Pains } from './Body.jsx'
 
 export function Me() {
   const { profile, races } = useApp()
@@ -26,7 +27,8 @@ export function Me() {
         <Row icon="cal" color="#5e5ce6" title="Programme d’entraînement" sub={next ? 'Vers ' + next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
         <Row icon="leaf" color="#30d158" title="Coach nutrition" sub="Besoins du jour et jour de course" href="#/moi/nutrition" />
         <Row icon="pill" color="#ff9f0a" title="Compléments" sub="Ce qui est prouvé, doses, précautions" href="#/moi/complements" />
-        <Row icon="heart" color="#ff375f" title="Santé" sub={'Sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle et hormones' : '') + ', forme'} href="#/moi/sante" />
+        <Row icon="heart" color="#ff375f" title="Santé" sub={'Sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle et hormones' : '') + ', forme, douleurs'} href="#/moi/sante" />
+        <Row icon="leaf" color="#64d2ff" title="Étirements et mobilité" sub="Routines minutées, banque par zone" href="#/moi/etirements" />
       </List>
     </Sec>
     <Sec title="Compte">
@@ -38,77 +40,6 @@ export function Me() {
         <Row icon="bug" color="#ff453a" title="Signalements" sub="Signaler un problème, suivre les corrections" href="#/moi/bugs" />
       </List>
     </Sec>
-  </Page>
-}
-
-// ---------------- Programme ----------------
-export function Program() {
-  const { profile, races, sessions, teams } = useApp()
-  const next = mainRace(races)   // objectif principal (A), sinon la prochaine course
-  const [perWeek, setPerWeek] = useState(4)
-  const well = useLoad(() => profile.consent_health ? api.journal.list('wellbeing') : [], [])
-  const sleep = useLoad(() => profile.consent_health ? api.journal.list('sleep') : [], [])
-  const sst = sleepStats(sleep.data || [])
-  const blood = useLoad(() => profile.consent_health ? api.journal.list('blood') : [], [])
-  const female = profile.sex === 'F'   // le cycle n'est pris en compte que pour un profil féminin
-  const cyc = useLoad(() => profile.consent_health && female ? api.journal.list('cycle') : [], [female])
-  const plans = plansOf(teams)
-  const last = sessions.find(s => !isCustom(s) && Object.values(s.athletes || {}).includes(profile.id))
-  const sum = last ? summary(last, plans[last.team_id]) : null
-  const hr = useLoad(async () => { if (!last) return null; const rows = await api.hr.list(last.id); const r = rows.find(x => x.user_id === profile.id); return r ? hrBySegment(last, r, profile) : null }, [last && last.id])
-  const crp = ((blood.data || []).find(b => b.data.crp != null) || {}).data
-  const ci = female ? cycleInfo(cyc.data || []) : null
-  const monday = new Date(); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7))
-  const isoOf = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10)
-  const weekDays = Array.from({ length: 7 }, (_, i) => isoOf(new Date(monday.getTime() + i * 864e5)))
-  const doneJ = useLoad(() => api.journal.list('program_done'), [])
-  const doneRow = (doneJ.data || []).find(e => e.day === weekDays[0])
-  const manual = (doneRow && doneRow.data && doneRow.data.done) || []
-  const [saving, setSaving] = useState(false), toast = useToast()
-  const cycleDays = female && (cyc.data || []).length ? Array.from({ length: 7 }, (_, i) => { const d = new Date(monday.getTime() + i * 864e5); return phaseOn(cyc.data, new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10)) }) : null
-  const ci2 = useMemo(() => customInsights(sessions, profile.id), [sessions])
-  const tl = useMemo(() => trainingLoad(sessions, profile.id), [sessions])
-  const weakHy = sum ? sum.stations.filter(x => x.d != null && x.d > 5).sort((a, b) => b.d - a.d).map(x => x.id) : []
-  const p = buildProgram({ cycleDays, weeks: next ? Math.ceil(daysUntil(next.race_date) / 7) : null, format: next && next.format, perWeek,
-    weak: [...new Set([...weakHy, ...ci2.weakSt])], e1rm: ci2.e1rm, loadRatio: tl.chronic > 30 ? tl.ratio : null,
-    z5: hr.data ? hr.data.zones[4] : null, well: well.data || [], todayISO: todayISO(), today: (new Date().getDay() + 6) % 7, cycle: ci, crp: crp ? +crp.crp : null, sleepAvg: sst ? sst.avg : null })
-  const today = (new Date().getDay() + 6) % 7
-  // Séances réellement enregistrées ce jour-là (cochées automatiquement)
-  const logged = weekDays.map(d => sessions.some(s => s.session_date === d && Object.values(s.athletes || {}).includes(profile.id)))
-  const isDone = i => manual.includes(i) || logged[i]
-  const planned = p.days.map((d, i) => i).filter(i => p.days[i].key !== 'repos')
-  const nDone = planned.filter(isDone).length
-  async function toggle(i) {
-    if (saving || logged[i]) return
-    const next = manual.includes(i) ? manual.filter(x => x !== i) : [...manual, i].sort()
-    setSaving(true)
-    try {
-      const row = doneRow ? await api.journal.update(doneRow.id, { data: { done: next } }) : await api.journal.add({ kind: 'program_done', day: weekDays[0], data: { done: next } })
-      doneJ.set([row, ...(doneJ.data || []).filter(e => e.id !== row.id)])
-    } catch (e) { toast('Enregistrement impossible : ' + e.message) } finally { setSaving(false) }
-  }
-  return <Page back="#/moi" title="Programme" subtitle={p.phase.label + (next ? ` · ${next.name} dans ${daysUntil(next.race_date)} j` : '')}>
-    <Seg value={perWeek} onChange={setPerWeek} options={[[3, '3 séances'], [4, '4'], [5, '5'], [6, '6']]} />
-    <div className="glass card">{p.notes.map((n, i) => <div className="tip" key={i}><span className={'dot ' + (i === 0 ? '' : 'bad')} /><span className="small">{n}</span></div>)}</div>
-    {planned.length > 0 && <div className="row-gap small" style={{ margin: '4px 4px 8px' }}><b>{nDone}/{planned.length} séances faites cette semaine</b><span className="spacer" /><span className="progress" style={{ width: 120, height: 6, borderRadius: 3, background: 'var(--sep)', overflow: 'hidden', display: 'inline-block' }}><i style={{ display: 'block', height: '100%', width: (nDone / planned.length * 100) + '%', background: 'var(--good, #30d158)' }} /></span></div>}
-    <List>{p.days.map((d, i) => <div className="row stack" key={d.day} style={i === today ? { background: 'var(--accent-soft)' } : null}>
-      <div className="row-gap"><b>{d.day}</b>{i === today && <span className="badge accent">Aujourd’hui</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
-        {d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0, cursor: logged[i] ? 'default' : 'pointer' }} title={logged[i] ? 'Séance enregistrée dans l’app ce jour-là' : 'Cocher quand la séance est faite'}>
-          <input type="checkbox" checked={isDone(i)} disabled={logged[i] || saving} onChange={() => toggle(i)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
-      <div style={{ fontWeight: 600, textDecoration: isDone(i) && d.key !== 'repos' ? 'line-through' : 'none', opacity: isDone(i) && d.key !== 'repos' ? .65 : 1 }}>{d.title}</div><div className="small muted">{d.detail}</div>
-      {logged[i] && d.key !== 'repos' && <div className="tiny muted">Cochée automatiquement : séance enregistrée ce jour-là.</div>}
-      {d.adapted && !d.cycle && <div className="small muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</div>}
-      {d.cycle && <div className="small" style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><span className="badge" style={{ background: PHASE_COLOR[d.cycle.phase] + '33', color: 'var(--ink)', flexShrink: 0 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: PHASE_COLOR[d.cycle.phase], display: 'inline-block' }} />J{d.cycle.day} · {PHASE_LABEL[d.cycle.phase]}</span>{d.adapted && <span className="muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</span>}</div>}
-    </div>)}</List>
-    {ci2.targets.length > 0 && <>
-      <h2 className="sec">Vos prochaines cibles (séances spécialisées)</h2>
-      <List>{ci2.targets.map((t, i) => <div className="row stack" key={i}><div className="row-gap"><b>{t.label}</b><span className="spacer" /><span className="small muted">{frDate(t.date).slice(0, 5)}</span></div>
-        <span className="small">{fmtTarget(t.target)} → <b>{fmtTarget(t.next)}</b></span><span className="small muted">{t.why}{t.e1rm ? ' · 1RM estimé ' + Math.round(t.e1rm) + ' kg' : ''}</span></div>)}</List>
-      <button className="btn tinted block" style={{ marginTop: 10 }} onClick={() => { try { localStorage.setItem('hx-prefill', JSON.stringify(ci2.targets.map(t => ({ ...newBlock(t.ex), name: t.ex === 'free' ? t.label : '', target: t.next })))) } catch {} location.hash = '#/seance/specifique' }}><Icon name="bolt" size={16} />Créer une séance avec ces cibles</button>
-    </>}
-    <div className="glass card small" style={{ marginTop: 12 }}><b>Charge d’entraînement</b> · 7 derniers jours : {Math.round(tl.acute)} (minutes × effort) en {tl.n7} séance(s){tl.ratio != null && tl.chronic > 30 ? ` · ${tl.ratio.toFixed(2).replace('.', ',')} × votre moyenne des 4 semaines` : ''}. Repère : entre 0,8 et 1,3 ; au-delà de 1,5, le risque de blessure augmente.</div>
-    {p.weak.length > 0 && <p className="foot">Ateliers ciblés d’après votre dernière séance : {p.weak.map(id => STATION[id].label).join(', ')}.</p>}
-    <p className="foot">Repères généraux de préparation. Adaptez à vos sensations ; en cas de douleur ou de problème de santé, demandez l’avis d’un professionnel.</p>
   </Page>
 }
 
@@ -232,9 +163,10 @@ export function Health() {
   const asked = new URLSearchParams(location.hash.split('?')[1] || '').get('t')
   const [tab, setTab] = useState(asked && (asked !== 'cycle' || profile.sex === 'F') ? asked : 'sommeil')
   if (!profile.consent_health) return <Page back="#/moi" title="Santé"><div className="glass card"><h3>Accord nécessaire</h3><p className="muted small">Pour enregistrer poids, prises de sang{profile.sex === 'F' ? ', cycle' : ''} et forme, activez « Données de santé » dans les réglages. Ces données restent strictement privées.</p><a className="btn small" href="#/moi/reglages">Réglages</a></div></Page>
-  const tabs = [['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : []), ['forme', 'Forme']]
+  const tabs = [['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : []), ['forme', 'Forme'], ['douleurs', 'Douleurs']]
   return <Page back="#/moi" title="Santé" subtitle="Privé : visible par vous seul(e).">
-    <Seg value={tab} onChange={setTab} options={tabs} />
+    <div style={{ overflowX: 'auto', margin: '0 -16px', padding: '0 16px' }}><div className="seg" role="group" style={{ minWidth: 'max-content' }}>{tabs.map(([v, l]) => <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)} style={{ whiteSpace: 'nowrap' }}>{l}</button>)}</div></div>
+    {tab === 'douleurs' && <Pains />}
     {tab === 'sommeil' && <Sleep />}{tab === 'poids' && <Weight />}{tab === 'sang' && <Blood />}{tab === 'cycle' && profile.sex === 'F' && <Cycle />}{tab === 'forme' && <Wellbeing />}
   </Page>
 }

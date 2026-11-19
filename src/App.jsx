@@ -8,8 +8,10 @@ import { Teams, TeamDetail, PlanEditor } from './pages/Teams.jsx'
 import { Sessions, NewSession, Compare } from './pages/Sessions.jsx'
 import SessionPage from './pages/Session.jsx'
 import { NewCustom } from './pages/Custom.jsx'
-import { Me, Program, Nutrition, Supplements, Health, Profile, Settings, Import, HealthSync } from './pages/Me.jsx'
+import { Me, Nutrition, Supplements, Health, Profile, Settings, Import, HealthSync } from './pages/Me.jsx'
 import { BugSheet, BugsPage, AnalysesPage } from './pages/Bugs.jsx'
+import { StretchPage } from './pages/Body.jsx'
+import { Program } from './pages/Plan.jsx'
 import { logError, bugCtx, bugShot } from './lib/bugs.js'
 
 const Ctx = createContext(null)
@@ -122,7 +124,7 @@ export default function App() {
   else if (a === 'seance') page = <SessionPage id={b} tab={c} />
   else if (a === 'comparer') page = <Compare />
   else if (a === 'moi' && !b) page = <Me />
-  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage /> }[b] || <Me />
+  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, etirements: <StretchPage /> }[b] || <Me />
   else page = <Home />
   const tab = '#/' + ({ seance: 'seances', comparer: 'seances' }[a] || a || '')
 

@@ -4,7 +4,7 @@ import { SEGS, STATIONS, normPlan, changeObjective } from './hyrox.js'
 const age = p => p && p.birth_year ? new Date().getFullYear() - p.birth_year : 35
 const W = p => (p && +p.weight_kg) || 75
 // Groupes d'ateliers selon ce qui compte le plus
-const GROUP = { push: 'force', pull: 'force', farm: 'force', ski: 'erg', row: 'erg', burp: 'corps', lunge: 'corps', wb: 'mixte', run: 'course' }
+export const GROUP = { push: 'force', pull: 'force', farm: 'force', ski: 'erg', row: 'erg', burp: 'corps', lunge: 'corps', wb: 'mixte', run: 'course' }
 
 /** Indice de capacité relatif (1 = homme de 30 ans, 75 kg) pour un groupe d'effort. Heuristique volontairement simple. */
 export function capacity(p, group) {

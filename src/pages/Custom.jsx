@@ -3,116 +3,220 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { hasB } from '../lib/session.js'
 import { api } from '../lib/api.js'
-import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad } from '../ui.jsx'
+import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum } from '../ui.jsx'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone } from '../lib/hyrox.js'
-import { EXERCISES, EX, CATS, METRICS, newBlock, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel } from '../lib/custom.js'
+import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel } from '../lib/custom.js'
+import { LIBRARY, LIB_CATS, LIB } from '../lib/library.js'
+import { activeZones, hits, altFor, adaptBlocks, ZONE } from '../lib/pain.js'
+import { StretchSuggest } from './Body.jsx'
 import { series, hrStat, zonesOf, zoneOf, hrAt } from '../lib/hr.js'
 import { activeTeams, KIND } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 import { KeeperPicker } from './Sessions.jsx'
 
-const inp = { background: 'var(--glass)', borderRadius: 8, padding: '6px 8px', border: 0, minWidth: 0 }
+const inp = { background: 'var(--glass)', borderRadius: 8, padding: '6px 8px', border: 0, minWidth: 0, textAlign: 'left' }
 const pct = a => a == null ? '—' : Math.round(a * 100) + ' %'
 
 // ---------------------------------------------------------------- création
-function TargetFields({ ex, target, onChange }) {
-  const e = EX[ex] || {}, keys = ['time', 'meters', 'reps', 'load']
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-    {keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2, opacity: e.m && !e.m.includes(k) && !target[k] ? .55 : 1 }}>
-      {METRICS[k][0]} <span className="faint">({METRICS[k][1]})</span>
-      <input style={inp} inputMode={k === 'time' ? 'text' : 'decimal'} placeholder="—"
-        defaultValue={target[k] == null ? '' : k === 'time' ? fmt(target[k]) : String(target[k])}
-        onBlur={ev => { const v = ev.target.value.trim(); const n = v === '' ? null : k === 'time' ? parseT(v) : +v.replace(',', '.'); onChange({ ...target, [k]: Number.isNaN(n) ? target[k] : n }) }} />
-    </label>)}
+const fmtVal = (k, v) => v == null || v === '' ? '' : k === 'time' ? fmt(v) : String(v).replace('.', ',')
+const readVal = (k, v) => { v = String(v || '').trim(); if (v === '') return null; if (k === 'time') { const n = parseT(v); return Number.isNaN(n) ? undefined : n } const n = parseNum(v); return n == null ? undefined : n }
+/** Champs d'objectif : seulement ceux utiles à l'exercice (+ « autre mesure » au besoin) */
+function TargetFields({ ex, target, onChange, hide = [], strength }) {
+  const e = EX[ex] || {}
+  const base = (e.m || ['time', 'reps']).filter(k => k !== 'rounds')
+  const [extra, setExtra] = useState(() => Object.keys(target || {}).filter(k => target[k] != null && !base.includes(k) && METRICS[k]))
+  const keys = [...new Set([...base, ...extra])].filter(k => !hide.includes(k))
+  const others = ['time', 'meters', 'reps', 'load', 'cal'].filter(k => !keys.includes(k) && !hide.includes(k))
+  const cols = keys.length + (strength ? 1 : 0)
+  return <div>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, cols)}, 1fr)`, gap: 6 }}>
+      {keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {METRICS[k][0]}{e.uni && (k === 'reps' || k === 'time') ? ' / côté' : ''} <span className="faint">({METRICS[k][1]})</span>
+        <input style={inp} inputMode={k === 'time' ? 'text' : 'decimal'} placeholder="—" defaultValue={fmtVal(k, target[k])}
+          onBlur={ev => { const n = readVal(k, ev.target.value); if (n !== undefined) onChange({ ...target, [k]: n }) }} />
+      </label>)}
+      {strength && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title="Répétitions en réserve en fin de série">RIR <span className="faint">(en réserve)</span>
+        <input style={inp} inputMode="numeric" placeholder="—" defaultValue={target.rir ?? ''} onBlur={ev => { const n = readVal('rir', ev.target.value); if (n !== undefined) onChange({ ...target, rir: n }) }} /></label>}
+    </div>
+    {others.length > 0 && <div className="row-gap tiny" style={{ marginTop: 4, gap: 4 }}><span className="faint">+ mesure :</span>{others.map(k => <button key={k} className="link" style={{ fontSize: 12, padding: '0 4px', minHeight: 0, background: 'none', border: 0, color: 'var(--accent)' }} onClick={() => setExtra(x => [...x, k])}>{METRICS[k][0].toLowerCase()}</button>)}</div>}
   </div>
 }
-function BlockEditor({ b, i, n, duo, names, onChange, onMove, onDel }) {
-  return <div className="row stack">
-    <div className="row-gap">
-      <b className="num faint">{i + 1}</b>
-      <select value={b.ex} onChange={e => onChange({ ...b, ex: e.target.value, target: defaultTarget(e.target.value) })} style={{ ...inp, flex: 1, textAlign: 'left', direction: 'ltr' }}>
-        {CATS.map(([c, l]) => <optgroup key={c} label={l}>{EXERCISES.filter(x => x.cat === c).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}
-      </select>
-      <button className="icon-btn" aria-label="Monter" disabled={i === 0} onClick={() => onMove(-1)} style={{ width: 30, height: 30 }}>↑</button>
-      <button className="icon-btn" aria-label="Descendre" disabled={i === n - 1} onClick={() => onMove(1)} style={{ width: 30, height: 30 }}>↓</button>
-      <button className="icon-btn" aria-label="Supprimer l’exercice" onClick={onDel} style={{ width: 30, height: 30 }}><Icon name="trash" size={16} /></button>
-    </div>
-    {b.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice (ex. gainage latéral)" value={b.name} onChange={e => onChange({ ...b, name: e.target.value })} />}
-    <TargetFields key={b.ex} ex={b.ex} target={b.target} onChange={t => onChange({ ...b, target: t })} />
-    <div className="row-gap small">
-      <span>Séries</span><input style={{ ...inp, width: 48 }} inputMode="numeric" value={b.sets} onChange={e => onChange({ ...b, sets: e.target.value })} />
-      <span>Récup</span><input style={{ ...inp, width: 56 }} inputMode="text" defaultValue={fmt(b.rest)} onBlur={e => { const v = parseT(e.target.value); onChange({ ...b, rest: Number.isNaN(v) || v == null ? 0 : v }) }} />
-      {duo && <div className="seg" style={{ margin: 0, flex: 1, minWidth: 170 }}>{[['A', names.A], ['B', names.B], ['AB', 'Les deux']].map(([w, l]) => <button key={w} aria-pressed={b.w === w} onClick={() => onChange({ ...b, w })}>{l}</button>)}</div>}
-    </div>
-    <input style={inp} placeholder="Consigne (facultatif) : allure, tempo, zone…" value={b.note || ''} onChange={e => onChange({ ...b, note: e.target.value })} />
+function ExSelect({ value, onChange, style }) {
+  return <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inp, flex: 1, textAlign: 'left', direction: 'ltr', ...style }}>
+    {CATS.map(([c, l]) => <optgroup key={c} label={l}>{EXERCISES.filter(x => x.cat === c).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}
+  </select>
+}
+function PainWarn({ ex, zones, onSwap }) {
+  const h = hits(ex, zones); if (!h.length) return null
+  const a = altFor(ex, zones)
+  return <div className="small" style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--warn, #ff9f0a)' }}>
+    <span>⚠ Sollicite {h.map(z => (ZONE[z] || z).toLowerCase()).join(', ')} (douleur déclarée)</span>
+    {a && <button className="btn tinted small" style={{ minHeight: 0, padding: '3px 8px' }} onClick={() => onSwap(a)}>Remplacer par {EX[a].label}</button>}
   </div>
+}
+const Tools = ({ i, n, onMove, onDel }) => <>
+  <button className="icon-btn" aria-label="Monter" disabled={i === 0} onClick={() => onMove(-1)} style={{ width: 30, height: 30 }}>↑</button>
+  <button className="icon-btn" aria-label="Descendre" disabled={i === n - 1} onClick={() => onMove(1)} style={{ width: 30, height: 30 }}>↓</button>
+  <button className="icon-btn" aria-label="Supprimer" onClick={onDel} style={{ width: 30, height: 30 }}><Icon name="trash" size={16} /></button>
+</>
+const WhoSeg = ({ b, names, onChange }) => <div className="seg" style={{ margin: 0, flex: 1, minWidth: 170 }}>{[['A', names.A], ['B', names.B], ['AB', 'Les deux']].map(([w, l]) => <button key={w} aria-pressed={(b.w || 'A') === w} onClick={() => onChange({ ...b, w })}>{l}</button>)}</div>
+const num = (v, d = 0) => { const n = parseNum(v); return n == null ? d : n }
+
+function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
+  const e = EX[b.ex] || {}, strength = STRENGTH.includes(e.cat), sets = Math.max(1, +b.sets || 1)
+  const per = !!b.setTargets
+  const setKeys = (e.m || []).filter(k => k !== 'time' || !strength).filter(k => k !== 'rounds')
+  const swap = ex => onChange({ ...b, ex, target: defaultTarget(ex), setTargets: undefined })
+  return <div className="row stack">
+    <div className="row-gap"><b className="num faint">{i + 1}</b><ExSelect value={b.ex} onChange={swap} /><Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
+    {b.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice (ex. gainage latéral)" value={b.name} onChange={ev => onChange({ ...b, name: ev.target.value })} />}
+    <PainWarn ex={b.ex} zones={zones} onSwap={swap} />
+    {!per && <TargetFields key={b.ex} ex={b.ex} target={b.target || {}} strength={strength} onChange={t => onChange({ ...b, target: t })} />}
+    {per && <div className="glass" style={{ borderRadius: 10, padding: 6 }}>
+      {Array.from({ length: sets }, (_, k) => { const t = { ...b.target, ...(b.setTargets[k] || {}) }; return <div key={k + b.ex} className="row-gap small" style={{ gap: 6, marginBottom: 4 }}>
+        <span className="faint num" style={{ width: 52 }}>Série {k + 1}</span>
+        {setKeys.map(key => <input key={key} style={{ ...inp, width: 0, flex: 1 }} inputMode={key === 'time' ? 'text' : 'decimal'} placeholder={METRICS[key][1]} aria-label={METRICS[key][0] + ' série ' + (k + 1)} defaultValue={fmtVal(key, t[key])}
+          onBlur={ev => { const v = readVal(key, ev.target.value); if (v === undefined) return; const st = [...b.setTargets]; st[k] = { ...(st[k] || {}), [key]: v }; onChange({ ...b, setTargets: st }) }} />)}
+      </div> })}
+      <div className="tiny faint">Pyramide, séries dégressives… chaque série a son objectif ({setKeys.map(k => METRICS[k][1]).join(', ')}).</div>
+    </div>}
+    <div className="row-gap small">
+      <span>Séries</span><input style={{ ...inp, width: 44 }} inputMode="numeric" value={b.sets} onChange={ev => onChange({ ...b, sets: ev.target.value, setTargets: b.setTargets ? Array.from({ length: Math.max(1, +ev.target.value || 1) }, (_, k) => b.setTargets[k] || {}) : undefined })} />
+      <span>Récup</span><input style={{ ...inp, width: 56 }} inputMode="text" defaultValue={fmt(b.rest)} onBlur={ev => { const v = parseT(ev.target.value); onChange({ ...b, rest: Number.isNaN(v) || v == null ? 0 : v }) }} />
+      {strength && <><span>Tempo</span><input style={{ ...inp, width: 64 }} placeholder="3-1-1" value={b.tempo || ''} onChange={ev => onChange({ ...b, tempo: ev.target.value })} title="Descente – pause – montée, en secondes" /></>}
+      {sets > 1 && <label className="row-gap tiny" style={{ gap: 4 }}><input type="checkbox" checked={per} onChange={ev => onChange({ ...b, setTargets: ev.target.checked ? Array.from({ length: sets }, () => ({ ...b.target })) : undefined })} />Séries différentes</label>}
+      {duo && <WhoSeg b={b} names={names} onChange={onChange} />}
+    </div>
+    <input style={inp} placeholder="Consigne (facultatif) : allure, zone, technique…" value={b.note || ''} onChange={ev => onChange({ ...b, note: ev.target.value })} />
+  </div>
+}
+
+function GroupEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
+  const F = FORMATS[b.fmt] || {}, timed = b.fmt === 'tabata' || b.fmt === 'interval'
+  const setItem = (j, it) => onChange({ ...b, items: b.items.map((x, k) => k === j ? it : x) })
+  const P = ({ label, k, time, w = 52 }) => <><span>{label}</span><input style={{ ...inp, width: w }} inputMode={time ? 'text' : 'numeric'} defaultValue={time ? fmt(b[k]) : b[k]} key={b.fmt + k}
+    onBlur={ev => { const v = time ? parseT(ev.target.value) : num(ev.target.value, b[k]); onChange({ ...b, [k]: Number.isNaN(v) || v == null ? b[k] : v }) }} /></>
+  return <div className="row stack" style={{ background: 'var(--accent-soft)', borderLeft: '3px solid var(--accent)' }}>
+    <div className="row-gap"><b className="num faint">{i + 1}</b>
+      <select value={b.fmt} onChange={ev => onChange({ ...newGroup(ev.target.value), items: b.items, w: b.w })} style={{ ...inp, flex: 1, fontWeight: 600 }}>{Object.entries(FORMATS).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}</select>
+      <Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
+    <div className="tiny muted">{F.hint}</div>
+    <div className="row-gap small">
+      {(b.fmt === 'circuit' || b.fmt === 'superset') && <><P label="Tours" k="rounds" />{b.fmt === 'circuit' && <P label="Récup entre exercices" k="restItem" time />}<P label="Récup après le tour" k="rest" time /></>}
+      {b.fmt === 'emom' && <P label="Minutes" k="minutes" />}
+      {b.fmt === 'amrap' && <><P label="Durée (min)" k="minutes" /><span>Objectif</span><input style={{ ...inp, width: 52 }} inputMode="numeric" defaultValue={(b.target || {}).rounds || ''} onBlur={ev => onChange({ ...b, target: { ...b.target, rounds: num(ev.target.value, null) } })} /><span>tours</span></>}
+      {timed && <><P label="Tours" k="rounds" /><P label="Effort (s)" k="work" /><P label="Récup (s)" k="rest" /></>}
+      {duo && <WhoSeg b={b} names={names} onChange={onChange} />}
+    </div>
+    {b.items.map((it, j) => <div key={j} style={{ paddingLeft: 10, borderLeft: '1px dashed var(--sep)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="row-gap"><span className="tiny faint">{String.fromCharCode(97 + j)}.</span><ExSelect value={it.ex} onChange={ex => setItem(j, { ...it, ex, target: defaultTarget(ex, true) })} />
+        <button className="icon-btn" aria-label="Retirer l’exercice du bloc" disabled={b.items.length < 2} onClick={() => onChange({ ...b, items: b.items.filter((_, k) => k !== j) })} style={{ width: 30, height: 30 }}><Icon name="close" size={14} /></button></div>
+      {it.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice" value={it.name} onChange={ev => setItem(j, { ...it, name: ev.target.value })} />}
+      <PainWarn ex={it.ex} zones={zones} onSwap={ex => setItem(j, { ...it, ex, target: defaultTarget(ex, true) })} />
+      <TargetFields key={it.ex} ex={it.ex} target={it.target || {}} hide={timed || b.fmt === 'amrap' || b.fmt === 'emom' ? ['time'] : []} onChange={t => setItem(j, { ...it, target: t })} />
+    </div>)}
+    <button className="btn plain small" style={{ alignSelf: 'flex-start' }} onClick={() => onChange({ ...b, items: [...b.items, { ex: 'burpee', name: '', target: defaultTarget('burpee', true), note: '' }] })}><Icon name="plus" size={14} />Exercice dans ce bloc</button>
+  </div>
+}
+
+/** Bibliothèque : séances types + modèles personnels */
+function LibrarySheet({ tpls, onPick, onDelTpl, onClose }) {
+  const [cat, setCat] = useState((tpls || []).length ? 'mine' : 'renfo')
+  const L = cat === 'mine' ? (tpls || []).map(t => ({ id: t.id, name: t.data.name, desc: t.data.blocks.map(b => isGroup(b) ? FORMATS[b.fmt].label + ' (' + b.items.map(exLabel).join(', ') + ')' : exLabel(b)).join(' · '), blocks: t.data.blocks, mine: true })) : LIBRARY.filter(t => t.cat === cat)
+  return <Sheet title="Bibliothèque de séances" onClose={onClose}>
+    <div className="seg scroll-x" style={{ display: 'flex' }}>{[['mine', 'Mes modèles'], ...LIB_CATS].map(([k, l]) => <button key={k} aria-pressed={cat === k} onClick={() => setCat(k)}>{l}</button>)}</div>
+    {L.length ? <List>{L.map(t => <div className="row" key={t.id}><span className="label"><span className="t">{t.name}</span><span className="s">{t.desc}</span></span>
+      <button className="btn tinted small" onClick={() => onPick(t)}>Choisir</button>
+      {t.mine && <button className="icon-btn" aria-label="Supprimer le modèle" onClick={() => onDelTpl(t.id)}><Icon name="trash" size={16} /></button>}</div>)}</List>
+      : <div className="glass card"><Empty icon="bolt">Aucun modèle personnel. Composez une séance puis « Enregistrer comme modèle ».</Empty></div>}
+    <p className="foot">Une séance choisie reste modifiable : exercices, charges, séries, récupérations.</p>
+  </Sheet>
 }
 
 export function NewCustom() {
   const { teams, profile, user, reload } = useApp(), toast = useToast()
   const tpls = useLoad(() => api.journal.list('workout'), [])
+  const pains = useLoad(() => profile.consent_health ? api.journal.list('pain') : [], [])
+  const zones = activeZones(pains.data || [])
   const mine = activeTeams(teams, profile.id).filter(t => t.members.filter(m => !m.left_at).length === 2)
-  const [f, setF] = useState({ title: '', format: 'solo', team: mine[0] ? mine[0].id : '', date: todayISO(), keeper: null })
-  const [blocks, setBlocks] = useState(() => { try { const pf = JSON.parse(localStorage.getItem('hx-prefill') || 'null'); if (pf && pf.length) { localStorage.removeItem('hx-prefill'); return pf } } catch {} return [{ ...newBlock('run') }, { ...newBlock('ski') }, { ...newBlock('wb') }] })
-  const [err, setErr] = useState('')
+  const q = new URLSearchParams(location.hash.split('?')[1] || '')
+  const pre = useMemo(() => { try { const pf = JSON.parse(localStorage.getItem('hx-prefill') || 'null'); if (pf) { localStorage.removeItem('hx-prefill'); return Array.isArray(pf) ? { blocks: pf } : pf } } catch {} const t = q.get('tpl') && LIB[q.get('tpl')]; return t ? { blocks: t.blocks, title: t.name } : null }, [])
+  const [f, setF] = useState({ title: (pre && pre.title) || '', format: 'solo', team: mine[0] ? mine[0].id : '', date: q.get('date') || (pre && pre.date) || todayISO(), keeper: null })
+  const [blocks, setBlocks] = useState(() => (pre && pre.blocks && pre.blocks.length) ? pre.blocks : [newBlock('run'), newBlock('ski'), newBlock('wb')])
+  const [err, setErr] = useState(''), [lib, setLib] = useState(false), [adding, setAdding] = useState(false)
   const team = f.format === 'duo' ? mine.find(t => t.id === f.team) : null
   const names = team ? { A: slotName(team, 'A'), B: slotName(team, 'B') } : { A: profile.display_name, B: '' }
   const upd = (i, b) => setBlocks(L => L.map((x, k) => k === i ? b : x))
   const move = (i, d) => setBlocks(L => { const c = [...L]; const [x] = c.splice(i, 1); c.splice(i + d, 0, x); return c })
+  const nSteps = useMemo(() => expand(blocks).length, [blocks])
+  const future = f.date > todayISO()
+  const painSwaps = useMemo(() => zones.length ? adaptBlocks(blocks, zones).swaps.filter(x => x.to) : [], [blocks, zones.join()])
   async function saveTpl() {
     const name = f.title.trim() || prompt('Nom du modèle ?'); if (!name) return
-    await api.journal.add({ kind: 'workout', day: todayISO(), data: { name, blocks } }); tpls.reload(); toast('Modèle enregistré')
+    try { await api.journal.add({ kind: 'workout', day: todayISO(), data: { name, blocks } }); tpls.reload(); toast('Modèle enregistré dans la bibliothèque') } catch (e) { toast('Enregistrement impossible : ' + e.message) }
   }
-  async function create(live) {
+  async function create(mode) {
     setErr('')
-    if (!blocks.length) return setErr('Ajoutez au moins un exercice')
+    if (!blocks.length || !nSteps) return setErr('Ajoutez au moins un exercice')
     if (f.format === 'duo' && !team) return setErr('Choisissez votre duo')
-    const bl = blocks.map(b => ({ ...b, sets: Math.max(1, +b.sets || 1), w: team ? b.w : 'A' }))
+    if (!f.date) return setErr('Choisissez une date')
+    const bl = blocks.map(b => isGroup(b) ? { ...b, w: team ? b.w || 'A' : 'A' } : { ...b, sets: Math.max(1, +b.sets || 1), w: team ? b.w : 'A' })
     try {
       const s = await api.sessions.save({ owner: user.id, team_id: team ? team.id : null, kind: 'entrainement', session_date: f.date,
-        name: f.title.trim() || 'Séance spécialisée du ' + frDate(f.date).slice(0, 5), athletes: team ? slotsOf(team) : { A: user.id, B: null },
-        names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: emptyCustom(bl, f.title.trim()) })
-      await reload(['sessions']); location.hash = '#/seance/' + s.id + (live ? '/chrono' : '/temps')
+        name: f.title.trim() || 'Séance du ' + frDate(f.date).slice(0, 5), athletes: team ? slotsOf(team) : { A: user.id, B: null },
+        names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: { ...emptyCustom(bl, f.title.trim()), ...(q.get('plan') ? { planDay: q.get('plan') } : {}) } })
+      await reload(['sessions'])
+      if (mode === 'plan') { toast('Séance planifiée le ' + frDate(f.date)); location.hash = q.get('back') || '#/seances' }
+      else location.hash = '#/seance/' + s.id + (mode === 'live' ? '/chrono' : '/temps')
     } catch (e) { setErr(e.message) }
   }
-  return <Page back="#/seances" title="Séance spécialisée" subtitle="Ateliers Hyrox, course, musculation… avec vos objectifs en temps, mètres, répétitions ou charge.">
-    {(tpls.data || []).length > 0 && <><h2 className="sec">Mes modèles</h2>
-      <List>{tpls.data.map(t => <div className="row" key={t.id}><span className="label"><span className="t">{t.data.name}</span><span className="s">{t.data.blocks.map(exLabel).join(' · ')}</span></span>
-        <button className="btn tinted small" onClick={() => { setBlocks(t.data.blocks); setF({ ...f, title: t.data.name }) }}>Charger</button>
-        <button className="icon-btn" aria-label="Supprimer le modèle" onClick={async () => { if (confirm('Supprimer ce modèle ?')) { await api.journal.remove(t.id); tpls.reload() } }}><Icon name="trash" size={16} /></button></div>)}</List></>}
+  return <Page back={q.get('back') || '#/seances'} title="Séance personnalisée" subtitle="Renfo, course, ateliers, circuits… avec vos objectifs. Planifiez-la ou lancez-la tout de suite.">
+    <button className="btn tinted block" onClick={() => setLib(true)}><Icon name="cal" size={18} />Bibliothèque : séances types et mes modèles</button>
     <h2 className="sec">Séance</h2>
     <Seg value={f.format} onChange={v => setF({ ...f, format: v })} options={[['solo', 'Solo'], ['duo', 'Duo']]} />
     <List>
-      <Field label="Titre"><input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Force + SkiErg" /></Field>
+      <Field label="Titre"><input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Renfo bas du corps" /></Field>
       {f.format === 'duo' && <Field label="Duo"><select value={f.team} onChange={e => setF({ ...f, team: e.target.value })}>{mine.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>}
-      <Field label="Date"><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+      <Field label="Date" sub={future ? 'Séance planifiée : elle apparaîtra dans votre programme ce jour-là' : null}><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
     </List>
-    <h2 className="sec">Exercices et objectifs</h2>
-    <List>{blocks.map((b, i) => <BlockEditor key={i + b.ex} b={b} i={i} n={blocks.length} duo={!!team} names={names} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} />)}
-      <Row icon="plus" color="#30d158" title="Ajouter un exercice" onClick={() => setBlocks(L => [...L, newBlock(L.length ? L[L.length - 1].ex : 'ski')])} /></List>
-    <p className="foot">Renseignez seulement les objectifs utiles : temps pour finir (ex. 500 m en 1:50), durée à tenir (gainage 1:00), répétitions, charge. Les séries répètent l’exercice avec la récupération indiquée.</p>
+    <h2 className="sec">Exercices et objectifs <span className="faint small">· {nSteps} étape(s)</span></h2>
+    {painSwaps.length > 0 && <div className="note small">Douleur déclarée : {painSwaps.length} exercice(s) la sollicitent. <button className="btn tinted small" onClick={() => setBlocks(adaptBlocks(blocks, zones).blocks)}>Tout adapter</button></div>}
+    <List>{blocks.map((b, i) => isGroup(b)
+        ? <GroupEditor key={i + b.fmt} b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} />
+        : <BlockEditor key={i + b.ex} b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} />)}
+      <Row icon="plus" color="#30d158" title="Ajouter un exercice" sub="Séries, répétitions, charge, RIR, tempo…" onClick={() => setBlocks(L => [...L, newBlock(L.length && !isGroup(L[L.length - 1]) ? L[L.length - 1].ex : 'squat')])} />
+      <Row icon="timer" color="#5e5ce6" title="Ajouter un bloc" sub="Circuit, superset, EMOM, AMRAP, Tabata, intervalles" onClick={() => setAdding(a => !a)} />
+      {adding && <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{Object.entries(FORMATS).map(([k, F]) => <button key={k} className="btn glass small" onClick={() => { setBlocks(L => [...L, newGroup(k)]); setAdding(false) }}>{F.label}</button>)}</div>}
+    </List>
+    <p className="foot">Seules les mesures utiles à chaque exercice sont proposées (« + mesure » pour en ajouter). RIR = répétitions gardées en réserve. Les Tabata et intervalles s’enchaînent automatiquement dans le chrono.</p>
     <h2 className="sec">Qui enregistre les temps ?</h2>
     <KeeperPicker value={f.keeper} onChange={k => setF({ ...f, keeper: k })} exclude={[user.id]} />
     {err && <p className="err">{err}</p>}
-    <div className="row-gap" style={{ marginTop: 16 }}>
-      <button className="btn" style={{ flex: 2 }} onClick={() => create(true)}><Icon name="play" size={18} />Chrono</button>
-      <button className="btn glass" style={{ flex: 2 }} onClick={() => create(false)}>Saisir après coup</button>
-      <button className="btn glass" style={{ flex: 1 }} onClick={saveTpl}>Modèle</button>
-    </div>
+    {future
+      ? <><button className="btn block" style={{ marginTop: 16 }} onClick={() => create('plan')}><Icon name="cal" size={18} />Planifier le {frDate(f.date).slice(0, 5)}</button>
+        <button className="btn glass block" style={{ marginTop: 8 }} onClick={saveTpl}>Enregistrer comme modèle</button></>
+      : <><button className="btn block" style={{ marginTop: 16 }} onClick={() => create('live')}><Icon name="play" size={18} />Lancer le chrono</button>
+        <div className="row-gap" style={{ marginTop: 8 }}>
+          <button className="btn glass" style={{ flex: 1 }} onClick={() => create('after')}>Saisir après coup</button>
+          <button className="btn glass" style={{ flex: 1 }} onClick={saveTpl}>Enregistrer comme modèle</button>
+        </div></>}
+    {lib && <LibrarySheet tpls={tpls.data} onClose={() => setLib(false)} onPick={t => { setBlocks(JSON.parse(JSON.stringify(t.blocks))); setF(x => ({ ...x, title: t.name })); setLib(false) }}
+      onDelTpl={async id => { if (confirm('Supprimer ce modèle ?')) { await api.journal.remove(id); tpls.reload() } }} />}
   </Page>
 }
 
 // ---------------------------------------------------------------- chrono
+const buzz = () => { try { navigator.vibrate && navigator.vibrate(180) } catch {} try { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; const c = buzz.c || (buzz.c = new C()), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.18) } catch {} }
 function useNow(on) { const [n, setN] = useState(Date.now()); useEffect(() => { if (!on) return; const t = setInterval(() => setN(Date.now()), 200); return () => clearInterval(t) }, [on]); return n }
 function DoneForm({ st, onSave, compact }) {
   const t = st.target || {}, d0 = st.done || {}
-  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? t.reps ?? '', load: d0.load ?? t.load ?? '', rpe: d0.rpe ?? 7 })
-  const keys = ['meters', 'reps', 'load'].filter(k => t[k] != null || d0[k] != null)
+  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: d0.rpe ?? 7 })
+  const keys = st.ex === 'amrap' ? ['rounds', 'reps'] : ['meters', 'cal', 'reps', 'load'].filter(k => t[k] != null || d0[k] != null)
   return <div>
-    {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{METRICS[k][0]} réalisé(e)<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
+    {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{st.ex === 'amrap' && k === 'reps' ? 'Reps en plus' : METRICS[k][0] + ' réalisé(e)'}<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
     <div className="row-gap small" style={{ marginTop: 6 }}><span>Effort ressenti</span><input type="range" min="1" max="10" value={v.rpe} onChange={e => setV({ ...v, rpe: +e.target.value })} style={{ flex: 1 }} aria-label="Effort ressenti" /><b className="num">{v.rpe}/10</b></div>
-    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(d0.time != null ? { time: d0.time } : {}), meters: v.meters === '' ? null : +String(v.meters).replace(',', '.'), reps: v.reps === '' ? null : +v.reps, load: v.load === '' ? null : +String(v.load).replace(',', '.'), rpe: v.rpe })}>Valider</button>
+    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds), rpe: v.rpe })}>Valider</button>
   </div>
 }
 export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
@@ -124,37 +228,52 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
   const t = started ? now - d.startedAt : 0
   const cl = () => JSON.parse(JSON.stringify(d))
   const rel = () => Date.now() - d.startedAt
+  const st = cur >= 0 ? steps[cur] : null, prev = cur > 0 ? steps[cur - 1] : cur < 0 ? steps[steps.length - 1] : null
+  const restLeft = st && st.s == null && prev && prev.e != null ? (prev.window ? prev.window - (t - prev.s) / 1000 : prev.rest ? prev.rest - (t - prev.e) / 1000 : null) : null
+  const nm = w => w === 'AB' ? 'Les deux' : who(w)
+  // Enchaînement automatique (Tabata, intervalles, EMOM, AMRAP) : fin d'effort et départ après la récupération
+  const lock = useRef(null)
+  useEffect(() => {
+    if (!started || finished || !st) return
+    const key = cur + ':' + (st.s == null ? 's' : 'e')
+    if (lock.current === key) return
+    if (st.s != null && st.e == null && st.auto && st.target.time && (t - st.s) / 1000 >= st.target.time) {
+      lock.current = key; buzz(); const x = cl(); x.steps[cur].e = st.s + st.target.time * 1000; commit(x)
+    } else if (st.s == null && st.autoStart && prev && prev.e != null && restLeft != null && restLeft <= 0) {
+      lock.current = key; buzz(); const x = cl(); x.steps[cur].s = prev.window ? prev.s + prev.window * 1000 : prev.e + (prev.rest || 0) * 1000; commit(x)
+    }
+  }, [now])
   if (!started) return <div className="glass card center">
     <div className="clock num">0:00</div>
     <p className="muted">{steps.length} étape(s) : {[...new Set(steps.map(exLabel))].join(', ')}</p>
     <button className="btn green block" style={{ minHeight: 70, fontSize: 20 }} onClick={() => commit({ ...cl(), startedAt: Date.now() })}><Icon name="play" />Départ</button>
   </div>
-  const st = cur >= 0 ? steps[cur] : null, prev = cur > 0 ? steps[cur - 1] : cur < 0 ? steps[steps.length - 1] : null
-  const restLeft = st && st.s == null && prev && prev.e != null && prev.rest ? prev.rest - (t - prev.e) / 1000 : null
-  const nm = w => w === 'AB' ? 'Les deux' : who(w)
   return <>
     <div className="glass card">
       <div className="clock num">{fmt(t / 1000)}</div>
       <div className="progress"><i style={{ width: ((cur < 0 ? steps.length : cur) / steps.length * 100) + '%' }} /></div>
       {st ? <>
-        <div className="cur">{exLabel(st)}{st.of > 1 ? ` · série ${st.set}/${st.of}` : ''}</div>
-        <div className="cur-sub">Objectif : {fmtTarget(st.target)}{hasB(s) ? ' · ' + nm(st.w) : ''}{st.note ? ' · ' + st.note : ''}</div>
+        {st.grp && <div className="badge accent" style={{ marginBottom: 4 }}>{st.grp.label}{st.auto || st.autoStart ? ' · enchaînement automatique' : ''}</div>}
+        <div className="cur">{stepLabel(st)}</div>
+        <div className="cur-sub">Objectif : {st.hold && st.target.time ? (st.ex === 'amrap' ? 'max de tours en ' + fmt(st.target.time) + (st.target.rounds ? ' (visez ' + st.target.rounds + ')' : '') : fmtTarget({ ...st.target, time: null }).replace('—', 'effort') + ' en ' + fmt(st.target.time)) : fmtTarget(st.target)}{st.tempo ? ' · tempo ' + st.tempo : ''}{hasB(s) ? ' · ' + nm(st.w) : ''}{st.note ? ' · ' + st.note : ''}</div>
+        {steps[cur + 1] && <div className="tiny muted center">Ensuite : {stepLabel(steps[cur + 1])}</div>}
         {st.s == null ? <>
           {restLeft != null && <div className={'center num ' + (restLeft > 0 ? '' : 'good')} style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>{restLeft > 0 ? 'Récup ' + fmt(restLeft) : 'C’est reparti !'}</div>}
           <div className="pad"><button className="btn green full" onClick={() => { const x = cl(); x.steps[cur].s = rel(); commit(x) }}><Icon name="play" />Démarrer<small>{exLabel(st)}</small></button></div>
         </> : <>
-          <div className="center num" style={{ fontSize: 34, fontWeight: 700 }}>{fmt((t - st.s) / 1000, true)}{st.target.time ? <span className="muted small"> / {fmt(st.target.time)}</span> : ''}</div>
+          <div className="center num" style={{ fontSize: 34, fontWeight: 700 }}>{st.auto && st.target.time ? <>{fmt(Math.max(0, st.target.time - (t - st.s) / 1000))}<span className="muted small"> restant</span></> : <>{fmt((t - st.s) / 1000, true)}{st.target.time ? <span className="muted small"> / {fmt(st.target.time)}</span> : ''}</>}</div>
+          {st.window && <div className="center small muted">Minute en cours : {fmt(Math.max(0, st.window - (t - st.s) / 1000))} avant la suivante</div>}
           <div className="pad" style={{ marginTop: 10 }}><button className="btn red full" onClick={() => { const x = cl(); x.steps[cur].e = rel(); commit(x) }}>Terminé<small>enregistrer le temps</small></button></div>
         </>}
       </> : <div className="center"><div className="cur">Séance terminée</div><div className="cur-sub">Durée totale {fmt(customSummary(s).total)}</div>
         <a className="btn" href={'#/seance/' + s.id + (keeperOnly ? '/temps' : '/stats')}>{keeperOnly ? 'Voir les résultats' : 'Voir l’analyse'}</a></div>}
     </div>
-    {pendingDone >= 0 && <div className="glass card"><div className="small" style={{ marginBottom: 6 }}><b>{exLabel(steps[pendingDone])}{steps[pendingDone].of > 1 ? ` (série ${steps[pendingDone].set})` : ''}</b> en {fmt(doneOf(steps[pendingDone]).time)} : qu’avez-vous réalisé ?</div>
+    {pendingDone >= 0 && <div className="glass card"><div className="small" style={{ marginBottom: 6 }}><b>{stepLabel(steps[pendingDone])}</b> en {fmt(doneOf(steps[pendingDone]).time)} : qu’avez-vous réalisé ?</div>
       <DoneForm key={pendingDone} st={steps[pendingDone]} compact onSave={v => { const x = cl(); x.steps[pendingDone].done = v; commit(x) }} /></div>}
     <div className="row-gap"><button className="btn glass small" disabled={!canUndo} onClick={undo}><Icon name="undo" size={16} />Annuler</button><span className="spacer" />
       {st && <button className="btn plain small" onClick={() => { const x = cl(); const k = cur; if (x.steps[k].s == null) x.steps[k].s = rel(); x.steps[k].e = x.steps[k].s; x.steps[k].done = { skipped: true }; commit(x) }}>Passer l’étape</button>}
       <span className="small muted">Étape {Math.min(steps.length, cur < 0 ? steps.length : cur + 1)}/{steps.length}</span></div>
-    <List>{steps.map((x, i) => { const dn = doneOf(x), a = achievement(x); return <Row key={i} title={`${exLabel(x)}${x.of > 1 ? ' · ' + x.set + '/' + x.of : ''}`} sub={'Objectif ' + fmtTarget(x.target)} value={x.e != null ? <span className={a == null ? '' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{fmt(dn.time)}{a != null ? ' · ' + pct(a) : ''}</span> : i === cur ? '…' : ''} /> })}</List>
+    <List>{steps.map((x, i) => { const dn = doneOf(x), a = achievement(x); return <Row key={i} title={stepLabel(x)} sub={'Objectif ' + fmtTarget(x.target)} value={x.e != null ? <span className={a == null ? '' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{fmt(dn.time)}{a != null ? ' · ' + pct(a) : ''}</span> : i === cur ? '…' : ''} /> })}</List>
   </>
 }
 
@@ -169,7 +288,7 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
   return <>
     <div className="stats"><Stat k="Étapes réalisées" v={`${sum.done}/${sum.n}`} /><Stat k="Objectifs atteints" v={pct(sum.achievement)} tone={sum.achievement >= 1 ? 'good' : 'bad'} /><Stat k="Temps de travail" v={fmt(sum.work)} d={sum.rest ? 'récup ' + fmt(sum.rest) : ''} /></div>
     <List>{steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), pc = paceOf(x); return <React.Fragment key={i}>
-      <Row title={`${exLabel(x)}${x.of > 1 ? ' · série ' + x.set + '/' + x.of : ''}`} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
+      <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
         <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Temps réalisé (mm:ss)<input style={inp} defaultValue={dn.time != null ? fmt(dn.time) : ''} onBlur={e => { const v = parseT(e.target.value); if (!Number.isNaN(v)) setDone(i, { ...(x.done || {}), time: v }) }} /></label>
@@ -203,7 +322,7 @@ export function CustomStats({ s, who }) {
   const S = get(meSlot) ? series(get(meSlot)) : null
   const end = customEnd(d) / 1000
   const all = S ? hrStat(S, 0, end) : null
-  const kcal = all ? kcalFromHR(all.avg, end / 60, prof(meSlot)) : kcalFromMET(steps.filter(x => x.w === meSlot || x.w === 'AB'), prof(meSlot))
+  const kcal = all ? kcalFromHR(all.avg, end / 60, prof(meSlot)) : d.avgHR ? kcalFromHR(d.avgHR, end / 60, prof(meSlot)) : kcalFromMET(steps.filter(x => x.w === meSlot || x.w === 'AB'), prof(meSlot))
   const z = [0, 0, 0, 0, 0]; let n = 0
   if (S) for (let t = 0; t <= end; t++) { const v = hrAt(S, t); if (v != null) { z[zoneOf(zones, v) - 1]++; n++ } }
   const bands = steps.filter(x => x.s != null && x.e != null).map(x => ({ a: x.s / 1000, b: x.e / 1000, color: hasB(s) ? COLORS[x.w === 'B' ? 'B' : 'A'] : '#5e5ce6' }))
@@ -220,12 +339,13 @@ export function CustomStats({ s, who }) {
       {n > 0 && <div className="zones" style={{ marginTop: 8 }}>{z.map((v, i) => <i key={i} className={'z' + (i + 1)} style={{ width: (v / n * 100) + '%' }} />)}</div>}</div>}
     <h2 className="sec">Exercice par exercice</h2>
     <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Étape</th><th className="r">Objectif</th><th className="r">Réalisé</th><th className="r">%</th><th className="r">FC moy/max</th></tr></thead><tbody>
-      {steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), h = by[i]; return <tr key={i}><td>{exLabel(x)}{x.of > 1 ? ' ' + x.set + '/' + x.of : ''}</td><td className="r small">{fmtTarget(x.target)}</td><td className="r small">{fmtTarget(dn)}</td>
+      {steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), h = by[i]; return <tr key={i}><td>{stepLabel(x)}</td><td className="r small">{fmtTarget(x.target)}</td><td className="r small">{fmtTarget(dn)}</td>
         <td className={'r num ' + (a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even')}>{pct(a)}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
     </tbody></table></div>
     <h2 className="sec">Objectifs proposés pour la prochaine fois</h2>
     <List>{prog.map((p, i) => <div className="row stack" key={i}><div className="row-gap"><b>{p.label}</b><span className="spacer" /><span className={'badge ' + (p.achievement >= 1 ? 'good' : p.achievement < 0.9 ? 'bad' : '')}>{pct(p.achievement)}</span></div>
       <span className="small">{fmtTarget(p.target)} → <b>{fmtTarget(p.next)}</b></span><span className="small muted">{p.why}{p.e1rm ? ` · 1RM estimé ${Math.round(p.e1rm)} kg` : ''}{p.hmax ? ` · FC max ${p.hmax}` : ''}</span></div>)}</List>
+    <StretchSuggest s={s} />
     <p className="foot">Les ateliers Hyrox et la course réalisés ici alimentent aussi vos temps prédits (comptés à 70 %, car effectués « à frais », hors enchaînement), le programme et la dépense du jour dans le coach nutrition.</p>
   </>
 }
