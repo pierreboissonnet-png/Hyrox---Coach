@@ -70,7 +70,14 @@ function extract(body: any): { hr: Sample[]; sleep: SleepRec[]; sleepNights: any
   if (H) { const ds = list(H.dates), vs = list(H.values); for (let i = 0; i < Math.min(ds.length, vs.length); i++) { const t = parseDate(ds[i]), v = num(vs[i]); if (t != null && v != null) hr.push([t, v]) } }
   const S = body && (body.sleep || flatSleep)
   if (S) { const as = list(S.starts), bs = list(S.ends), vs = list(S.values); for (let i = 0; i < Math.min(as.length, bs.length); i++) { const a = parseDate(as[i]), b = parseDate(bs[i]); if (a != null && b != null && b > a) sleep.push({ a, b, v: String(vs[i] ?? 'Asleep') }) } }
-  return { hr: hr.filter(([, v]) => v > 25 && v < 250), sleep, sleepNights, source }
+  return { hr: spreadMinutes(hr.filter(([, v]) => v > 25 && v < 250)), sleep, sleepNights, source }
+}
+/** Dates à la minute (Raccourcis sans « Formater la date ») : on répartit les mesures d'une même minute sur les 60 s */
+function spreadMinutes(hr: Sample[]): Sample[] {
+  if (!hr.length || hr.some(([t]) => t % 60000 !== 0)) return hr
+  const L = [...hr].sort((a, b) => a[0] - b[0]), out: Sample[] = []
+  for (let i = 0; i < L.length;) { let j = i; while (j < L.length && L[j][0] === L[i][0]) j++; const n = j - i; for (let k = 0; k < n; k++) out.push([L[i][0] + Math.round(k * 60000 / n), L[i + k][1]]); i = j }
+  return out
 }
 
 /** Catégorie d'une plage de sommeil (valeurs anglaises ou françaises de Santé) */

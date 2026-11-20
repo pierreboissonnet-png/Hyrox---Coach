@@ -12,28 +12,20 @@ const A = ({ children }) => <b style={{ color: 'var(--accent)' }}>« {children} 
 const Box = ({ n, children }) => <div style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: '.5px solid var(--sep)' }}><span style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 12, background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 700, display: 'grid', placeItems: 'center' }}>{n}</span><div style={{ flex: 1 }}>{children}</div></div>
 const Tip = ({ children }) => <div className="note small" style={{ margin: '8px 0 0' }}>{children}</div>
 
-/**
- * Bloc commun « rechercher → boucle → deux listes », réutilisé pour chaque type de données.
- * start : n° de la première sous-étape ; type : nom du type dans Santé ; period : période à choisir ; dates/values : noms des variables
- */
-function Collect({ start, type, period, dates, values, extra }) {
-  return <>
-    <Box n={start}>Touchez <b>Ajouter une action</b> (ou la barre de recherche en bas), cherchez <A>Rechercher des échantillons de santé</A> et ajoutez-la. Touchez le mot bleu après « Type » et choisissez <b>{type}</b>.</Box>
-    <Box n={start + 1}>Dans cette action, touchez <b>Ajouter un filtre</b> : <b>Date de début</b> › <b>est dans les dernier(e)s</b> › <b>{period}</b>. Laissez <b>Limite</b> désactivée.</Box>
-    <Box n={start + 2}>Ajoutez <A>Répéter avec chaque</A>. Deux lignes apparaissent : « Répéter avec chaque élément dans <i>Échantillons de santé</i> » et, plus bas, <b>« Fin de la répétition »</b>. Tout ce qui suit se place <b>entre ces deux lignes</b>.</Box>
-    <Box n={start + 3}>Ajoutez <A>Ajouter à la variable</A>. <b>Si elle s’ajoute tout en bas</b>, sous « Fin de la répétition », maintenez-la appuyée et faites-la glisser juste au-dessus de « Fin de la répétition ».
-      <div style={{ marginTop: 4 }}>Touchez le champ <b>Valeur</b> › <b>Sélectionner une variable</b> › touchez <b>Élément de répétition</b>. Touchez ensuite la bulle bleue « Élément de répétition » qui vient d’apparaître et choisissez <b>Date de début</b> dans la liste. Touchez <b>Variable</b> et tapez <C t={dates} />.</div></Box>
-    <Box n={start + 4}>Ajoutez une deuxième <A>Ajouter à la variable</A> (toujours dans la boucle) : même manipulation, mais choisissez <b>Valeur</b> au lieu de Date de début ; nom de la variable <C t={values} />.{extra}</Box>
-  </>
+/** Recherche d'un type de données (sans boucle : c'est la boucle qui rendait l'envoi très lent) */
+function Search({ n, type, period }) {
+  return <Box n={n}>Ajoutez <A>Rechercher des échantillons de santé</A> (barre de recherche en bas de l’écran). Touchez le mot bleu après « Type » et choisissez <b>{type}</b>. Touchez <b>Ajouter un filtre</b> : <b>Date de début</b> › <b>est dans les dernier(e)s</b> › <b>{period}</b>. Laissez <b>Limite</b> désactivée.</Box>
 }
+/** Champ JSON relié directement à une propriété des échantillons trouvés */
+const Field = ({ k, prop, src }) => <div style={{ margin: '3px 0' }}>• clé <C t={k} /> : valeur › <b>Sélectionner une variable</b> › touchez la sortie <b>{src || 'Échantillons de santé'}</b>, puis touchez la bulle bleue insérée et choisissez <b>{prop}</b>.</div>
 
 export function ShortcutGuide({ url, token }) {
   const [step, setStep] = useState(0)
   const send = (n, fields) => <>
-    <Box n={n}>Ajoutez <A>Obtenir le contenu de l’URL</A>. Elle doit être <b>tout en bas, sous « Fin de la répétition »</b> (faites-la glisser si besoin). Touchez le mot bleu <b>URL</b> et collez l’adresse : <C t={url} label="copier l’adresse" />.</Box>
-    <Box n={n + 1}>Touchez la petite flèche <b>⌄</b> (ou <b>Afficher plus</b>) à droite de l’action. Réglez <b>Méthode</b> sur <b>POST</b> et <b>Corps de la requête</b> sur <b>JSON</b>.</Box>
-    <Box n={n + 2}>Touchez <b>Ajouter un nouveau champ</b> › <b>Texte</b>. Clé : <C t="token" />, valeur : votre jeton {token ? <C t={token} label="copier mon jeton" /> : <span className="muted">(créez-le en haut de cette page, depuis l’iPhone)</span>}.</Box>
-    <Box n={n + 3}>Puis un champ <b>Texte</b> par variable, avec <b>exactement le même nom</b> que la variable : {fields.map((f, i) => <React.Fragment key={f}>{i ? ', ' : ''}<C t={f} /></React.Fragment>)}. Pour la valeur, touchez-la puis, dans la barre au-dessus du clavier, choisissez la variable du même nom.</Box>
+    <Box n={n}>Ajoutez <A>Obtenir le contenu de l’URL</A> <b>tout en bas</b>. Touchez le mot bleu <b>URL</b> et collez l’adresse : <C t={url} label="copier l’adresse" />.</Box>
+    <Box n={n + 1}>Touchez la petite flèche <b>⌄</b> (ou <b>Afficher plus</b>) de cette action : <b>Méthode</b> › <b>POST</b>, <b>Corps de la requête</b> › <b>JSON</b>.</Box>
+    <Box n={n + 2}>Touchez <b>Ajouter un nouveau champ</b> › <b>Texte</b> : clé <C t="token" />, valeur : votre jeton {token ? <C t={token} label="copier mon jeton" /> : <span className="muted">(créez-le en haut de cette page, depuis l’iPhone)</span>}.</Box>
+    <Box n={n + 3}>Ajoutez ensuite ces champs <b>Texte</b> :{fields}</Box>
   </>
   const S = [
     { t: 'Avant de commencer', c: <>
@@ -44,10 +36,11 @@ export function ShortcutGuide({ url, token }) {
       <Tip>Au premier lancement, l’iPhone demande l’accès à Santé : touchez <b>Autoriser</b> pour chaque type de données. Rien n’est envoyé ailleurs que dans votre espace privé de l’app.</Tip>
     </> },
     { t: 'Raccourci « Hyrox Sommeil »', c: <>
+      <p style={{ marginTop: 0 }}>Deux actions seulement : une recherche, puis l’envoi.</p>
       <Box n="1">Nouveau raccourci, nommez-le <C t="Hyrox Sommeil" />.</Box>
-      <Collect start={2} type="Analyse du sommeil" period="1 jour" dates="starts" values="values" extra={<div style={{ marginTop: 4 }}>Puis une troisième <A>Ajouter à la variable</A> dans la boucle : <b>Élément de répétition</b> › <b>Date de fin</b>, variable <C t="ends" />.</div>} />
-      {send(7, ['starts', 'ends', 'values'])}
-      <Tip>Pour insérer une variable dans un champ : touchez le champ, puis la barre au-dessus du clavier (<b>Variables</b>) et choisissez son nom. Vérification : votre raccourci doit se lire, de haut en bas : Rechercher… › Répéter avec chaque › Ajouter à la variable (×3) › Fin de la répétition › Obtenir le contenu de l’URL.</Tip>
+      <Search n={2} type="Analyse du sommeil" period="1 jour" />
+      {send(3, <><Field k="starts" prop="Date de début" /><Field k="ends" prop="Date de fin" /><Field k="values" prop="Valeur" /></>)}
+      <Tip>Votre raccourci doit se lire : <b>Rechercher des échantillons de santé</b> › <b>Obtenir le contenu de l’URL</b> (champs token, starts, ends, values). <b>Vous aviez fait la version avec « Répéter avec chaque » ?</b> Elle marche aussi, mais elle est lente : supprimez la boucle et ses « Ajouter à la variable », puis reliez les champs comme ci-dessus.</Tip>
     </> },
     { t: 'Tester puis automatiser', c: <>
       <Box n="1">Dans le raccourci, touchez ▶ en bas à droite. Autorisez l’accès à Santé si l’iPhone le demande.</Box>
@@ -55,44 +48,29 @@ export function ShortcutGuide({ url, token }) {
       <Box n="3">Automatisation : app Raccourcis › onglet <b>Automatisation</b> › <b>+</b> › <b>Heure de la journée</b> › <b>9:00</b>, Quotidien › choisissez <b>Exécuter immédiatement</b> › Suivant › choisissez <b>Hyrox Sommeil</b>.</Box>
       <Tip><b>Erreur 401</b> : jeton mal collé (pas d’espace avant ou après). <b>Erreur 403</b> : activez « Données de santé » dans Moi › Réglages. <b>Erreur 404 / introuvable</b> : la fonction « health-sync » n’est pas encore créée dans Supabase. <b>nights : 0</b> : pas de nuit enregistrée dans Santé ces dernières 24 h (montre ou mode Sommeil).</Tip>
     </> },
-    { t: 'Hyrox Mesures (1/3) : partir de Hyrox Sommeil', c: <>
-      <p style={{ marginTop: 0 }}>Ce raccourci envoie la FC au repos, la variabilité cardiaque, le poids, les pas… Le plus rapide : <b>dupliquer Hyrox Sommeil</b> puis l’adapter. On commence par une seule mesure, la <b>FC au repos</b>.</p>
-      <Box n="1">Dans l’onglet <b>Raccourcis</b>, maintenez appuyé <b>Hyrox Sommeil</b> › <b>Dupliquer</b>. Ouvrez la copie (« Hyrox Sommeil 1 »), touchez son titre en haut › <b>Renommer</b> › <C t="Hyrox Mesures" />.</Box>
-      <Box n="2">Dans <A>Rechercher des échantillons de santé</A> : touchez <b>Analyse du sommeil</b> et choisissez <b>Fréquence cardiaque au repos</b> (tapez « repos » pour la trouver). Dans le filtre Date de début, remplacez <b>1 jour</b> par <b>2 jours</b>.</Box>
-      <Box n="3">Dans la boucle, <b>supprimez</b> la troisième <A>Ajouter à la variable</A> (celle de la variable <b>ends</b>, avec Date de fin) : glissez-la vers la gauche › <b>Supprimer</b>.</Box>
-      <Box n="4">Renommez les deux variables restantes : touchez <b>starts</b> et remplacez par <C t="rhr_dates" /> ; touchez <b>values</b> et remplacez par <C t="rhr_values" />. La Date de début et la Valeur ne changent pas.</Box>
-      <Box n="5">Tout en bas, dans <A>Obtenir le contenu de l’URL</A>, gardez l’adresse, POST, JSON et le champ <b>token</b>. <b>Supprimez</b> les champs <b>starts</b>, <b>ends</b> et <b>values</b> (glissez vers la gauche).</Box>
-      <Box n="6">Ajoutez deux champs <b>Texte</b> : clé <C t="rhr_dates" /> = variable rhr_dates, clé <C t="rhr_values" /> = variable rhr_values.</Box>
-      <Box n="7">Testez avec ▶ (autorisez l’accès si demandé). La réponse doit contenir <b>"days": 1</b> ou plus. Si c’est 0 : la montre n’a pas encore mesuré de FC au repos ces 2 derniers jours.</Box>
-      <Tip>Vérification : de haut en bas, Rechercher (FC au repos) › Répéter avec chaque › Ajouter à la variable rhr_dates › Ajouter à la variable rhr_values › Fin de la répétition › Obtenir le contenu de l’URL (token, rhr_dates, rhr_values).</Tip>
-    </> },
-    { t: 'Hyrox Mesures (2/3) : ajouter les autres mesures', c: <>
-      <p style={{ marginTop: 0 }}>Pour chaque mesure en plus, on recopie le bloc de la FC au repos et on change trois choses : le <b>type</b>, la <b>période</b> et les <b>noms de variables</b>. Ajoutez-en autant que vous voulez, une à la fois.</p>
-      <div className="small" style={{ margin: '4px 0 8px', display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '4px 10px', alignItems: 'center' }}>
-        <b className="muted">Type dans Santé</b><b className="muted">Période</b><b className="muted">Variables</b>
-        {[['Variabilité de la fréquence cardiaque', '2 jours', 'hrv'], ['Poids', '2 jours', 'weight'], ['Nombre de pas', '2 jours', 'steps'], ['Énergie active', '2 jours', 'kcal'], ['VO₂ max — écrit avec un petit « ₂ » : tapez « VO » ou « forme » (Forme cardio). Facultatif', '30 jours', 'vo2'], ['Masse grasse (%)', '7 jours', 'fat'], ['Règles (écoulement menstruel)', '7 jours', 'flow']].map(([ty, pe, k]) => <React.Fragment key={k}><span>{ty}</span><span>{pe}</span><span><C t={k + '_dates'} /> <C t={k + '_values'} /></span></React.Fragment>)}
+    { t: 'Raccourci « Hyrox Mesures »', c: <>
+      <p style={{ marginTop: 0 }}>FC au repos, variabilité cardiaque, poids, pas… Le plus rapide : <b>dupliquer Hyrox Sommeil</b>, puis ajouter une recherche par mesure.</p>
+      <Box n="1">Maintenez appuyé <b>Hyrox Sommeil</b> › <b>Dupliquer</b>. Ouvrez la copie, touchez son titre › <b>Renommer</b> › <C t="Hyrox Mesures" />.</Box>
+      <Box n="2">Dans la recherche, remplacez <b>Analyse du sommeil</b> par <b>Fréquence cardiaque au repos</b> (tapez « repos ») et la période par <b>2 jours</b>.</Box>
+      <Box n="3">Dans <A>Obtenir le contenu de l’URL</A>, gardez <b>token</b> et supprimez les champs <b>starts</b>, <b>ends</b>, <b>values</b> (glissez vers la gauche). Ajoutez :<Field k="rhr_dates" prop="Date de début" /><Field k="rhr_values" prop="Valeur" /></Box>
+      <Box n="4">Testez avec ▶ : la réponse doit contenir <b>"days": 1</b> ou plus.</Box>
+      <Box n="5"><b>Pour chaque mesure en plus</b> (tableau ci-dessous) : ajoutez une nouvelle <A>Rechercher des échantillons de santé</A> et faites-la glisser <b>au-dessus</b> de « Obtenir le contenu de l’URL ». Choisissez son type et sa période.</Box>
+      <Box n="6">Dans « Obtenir le contenu de l’URL », ajoutez ses deux champs. Pour la valeur, dans <b>Sélectionner une variable</b>, touchez <b>la sortie de cette nouvelle recherche</b> (pas celle de la FC au repos), puis Date de début ou Valeur.</Box>
+      <div className="small" style={{ margin: '6px 0 4px', display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '4px 10px', alignItems: 'center' }}>
+        <b className="muted">Type dans Raccourcis</b><b className="muted">Période</b><b className="muted">Clés des champs</b>
+        {[['Variabilité de la fréquence cardiaque', '2 jours', 'hrv'], ['Poids', '2 jours', 'weight'], ['Nombre de pas', '2 jours', 'steps'], ['Énergie active', '2 jours', 'kcal'], ['Masse grasse (tapez « graisse » ou « masse »)', '7 jours', 'fat'], ['Règles (tapez « règl » ou « menstru »)', '7 jours', 'flow']].map(([ty, pe, k]) => <React.Fragment key={k}><span>{ty}</span><span>{pe}</span><span><C t={k + '_dates'} /> <C t={k + '_values'} /></span></React.Fragment>)}
       </div>
-      <Box n="1"><b>Copier le bloc</b> : maintenez appuyée l’action <A>Rechercher des échantillons de santé</A> › <b>Sélectionner</b>, puis touchez aussi « Répéter avec chaque », les deux « Ajouter à la variable » et « Fin de la répétition ». Touchez l’icône <b>Dupliquer</b> (deux carrés) en bas. <span className="muted">Si « Sélectionner » n’existe pas sur votre iPhone : maintenez chaque action › Dupliquer, une par une.</span></Box>
-      <Box n="2">La copie apparaît sous le premier bloc. Si elle est en dessous de « Obtenir le contenu de l’URL », faites glisser « Obtenir le contenu de l’URL » <b>tout en bas</b>.</Box>
-      <Box n="3">Dans la copie : changez le <b>Type</b> (par ex. Variabilité de la fréquence cardiaque) et la <b>période</b> du filtre selon le tableau.</Box>
-      <Box n="4">Vérifiez que la copie de <b>« Répéter avec chaque élément dans… »</b> pointe vers <b>la recherche juste au-dessus</b> : touchez le mot bleu « Échantillons de santé » › Sélectionner une variable › choisissez la sortie de la nouvelle recherche (la plus basse).</Box>
-      <Box n="5">Dans les deux « Ajouter à la variable » de la copie : <b>retouchez la bulle « Élément de répétition »</b> › Effacer, puis Sélectionner une variable › Élément de répétition › <b>Date de début</b> (et <b>Valeur</b> pour la deuxième). Ainsi elles lisent bien la nouvelle boucle. Renommez les variables selon le tableau (ex. <C t="hrv_dates" /> et <C t="hrv_values" />).</Box>
-      <Box n="6">Dans <A>Obtenir le contenu de l’URL</A>, ajoutez les deux champs <b>Texte</b> correspondants (ex. <C t="hrv_dates" /> et <C t="hrv_values" />), chacun avec la variable du même nom.</Box>
-      <Tip>Une erreur fréquente : oublier l’étape 4 ou 5. La nouvelle mesure renverrait alors les valeurs de la FC au repos. En cas de doute, testez avec ▶ après chaque mesure ajoutée : la réponse indique les jours et pesées reçus.</Tip>
-    </> },
-    { t: 'Hyrox Mesures (3/3) : tester et automatiser', c: <>
-      <Box n="1">Touchez ▶. Autorisez l’accès à chaque nouveau type de données. Dans la réponse : <b>"days"</b> = jours de mesures reçus, <b>"weights"</b> = pesées, <b>"periods"</b> = cycle.</Box>
-      <Box n="2">Ouvrez l’onglet <b>Automatisation</b>, touchez l’automatisation de <b>9:00</b> (créée pour Hyrox Sommeil). Ajoutez l’action <A>Exécuter le raccourci</A> et choisissez <b>Hyrox Mesures</b>, sous Hyrox Sommeil. <span className="muted">Ou créez une seconde automatisation Heure de la journée, 9:05, Exécuter immédiatement.</span></Box>
-      <Box n="3">Dans l’app : Santé › Forme affiche « Mesures de la montre » (FC au repos, variabilité…) dès le premier envoi.</Box>
-      <Tip><b>"days": 0</b> pour une mesure : vérifiez le Type, la période, et que la montre ou la balance a bien enregistré cette donnée dans Santé. <b>Valeurs bizarres</b> : une variable de la copie lit encore la première boucle (refaites l’étape 5 de la page précédente).</Tip>
+      <Box n="7">Testez avec ▶ après chaque mesure ajoutée. Puis ouvrez l’automatisation de <b>9:00</b> (onglet Automatisation) et ajoutez <A>Exécuter le raccourci</A> › <b>Hyrox Mesures</b>, sous Hyrox Sommeil.</Box>
+      <Tip>La liste des types de Raccourcis est plus courte que celle de Santé (pas de VO₂ max) : si un type n’apparaît pas, passez-le. Réponse <b>"days": 0</b> : la montre ou la balance n’a rien enregistré sur la période. <b>"weights"</b> = pesées reçues, <b>"periods"</b> = cycle.</Tip>
     </> },
     { t: 'Raccourci « Hyrox FC »', c: <>
-      <p style={{ marginTop: 0 }}>Il envoie la fréquence cardiaque de l’Apple Watch après chaque entraînement : l’app la rattache à la séance chronométrée et affiche le détail par atelier.</p>
-      <Box n="1">Nouveau raccourci <C t="Hyrox FC" />.</Box>
-      <Collect start={2} type="Fréquence cardiaque" period="4 heures" dates="dates" values="values" />
-      {send(7, ['dates', 'values'])}
-      <Box n="11">Automatisation : onglet <b>Automatisation</b> › <b>+</b> › <b>Apple Watch</b> (ou « Entraînement ») › <b>Se termine</b> › <b>Exécuter immédiatement</b> › Hyrox FC.</Box>
-      <Tip>Si l’automatisation « Entraînement » n’apparaît pas, ajoutez simplement Hyrox FC à l’automatisation de 9:00 avec une période de <b>24 heures</b> : le cardio arrivera le lendemain matin.</Tip>
+      <p style={{ marginTop: 0 }}>Il envoie la fréquence cardiaque de l’Apple Watch : l’app la rattache à la séance chronométrée et affiche le détail par atelier.</p>
+      <Box n="1">Dupliquez <b>Hyrox Sommeil</b> et renommez la copie <C t="Hyrox FC" />.</Box>
+      <Box n="2">Dans la recherche, choisissez le type <b>Fréquence cardiaque</b>, période <b>1 jour</b>.</Box>
+      <Box n="3">Dans « Obtenir le contenu de l’URL », gardez <b>token</b>, supprimez starts, ends et values, puis ajoutez :<Field k="dates" prop="Date de début" /><Field k="values" prop="Valeur" /></Box>
+      <Box n="4">Testez avec ▶ : <b>"hr_points"</b> doit être supérieur à 0. Sans boucle, l’envoi prend quelques secondes même avec des milliers de mesures.</Box>
+      <Box n="5">Automatisation : onglet <b>Automatisation</b> › <b>+</b> › <b>Apple Watch</b> (ou « Entraînement ») › <b>Se termine</b> › <b>Exécuter immédiatement</b> › Hyrox FC.</Box>
+      <Tip>Si l’automatisation « Entraînement » n’apparaît pas, ajoutez Hyrox FC à l’automatisation de 9:00 : le cardio arrivera le lendemain matin.</Tip>
     </> },
     { t: 'C’est terminé', c: <>
       <p style={{ marginTop: 0 }}>Chaque matin, vos nuits et vos mesures arrivent seules ; après chaque séance chronométrée, le cardio s’y rattache.</p>

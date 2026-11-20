@@ -92,3 +92,11 @@ test('raccourci simplifié : champs à plat', () => {
   const V = L.vitalsByDay(L.extractMetrics({ token: 'x', rhr_dates: '19 nov. 2026 à 07:00', rhr_values: '53', weight_dates: '19/11/2026 07:10', weight_values: '79,6 kg' }), 60)
   assert.equal(V['2026-11-19'].rhr, 53); assert.equal(V['2026-11-19'].weight, 79.6)
 })
+
+test('FC à la minute : mesures réparties sur la minute', () => {
+  L.setLocalTz(60)
+  const e = L.extract({ token: 'x', dates: '19 nov. 2026 à 18:01\n19 nov. 2026 à 18:01\n19 nov. 2026 à 18:01\n19 nov. 2026 à 18:02', values: '120\n125\n130\n140' })
+  assert.deepEqual(e.hr.map(([t]) => new Date(t).toISOString().slice(14, 19)), ['01:00', '01:20', '01:40', '02:00'])
+  const iso = L.extract({ heart_rate: { dates: ['2026-11-19T18:01:05+01:00', '2026-11-19T18:01:10+01:00'], values: [120, 121] } })
+  assert.equal(new Date(iso.hr[1][0]).getUTCSeconds(), 10)
+})
