@@ -55,22 +55,36 @@ export function ShortcutGuide({ url, token }) {
       <Box n="3">Automatisation : app Raccourcis › onglet <b>Automatisation</b> › <b>+</b> › <b>Heure de la journée</b> › <b>9:00</b>, Quotidien › choisissez <b>Exécuter immédiatement</b> › Suivant › choisissez <b>Hyrox Sommeil</b>.</Box>
       <Tip><b>Erreur 401</b> : jeton mal collé (pas d’espace avant ou après). <b>Erreur 403</b> : activez « Données de santé » dans Moi › Réglages. <b>Erreur 404 / introuvable</b> : la fonction « health-sync » n’est pas encore créée dans Supabase. <b>nights : 0</b> : pas de nuit enregistrée dans Santé ces dernières 24 h (montre ou mode Sommeil).</Tip>
     </> },
-    { t: 'Raccourci « Hyrox Mesures »', c: <>
-      <p style={{ marginTop: 0 }}>FC au repos, variabilité cardiaque, poids, pas… Vous pouvez n’en mettre que certaines : commencez par les deux premières.</p>
-      <Box n="1">Nouveau raccourci <C t="Hyrox Mesures" />. Pour <b>chaque</b> mesure ci-dessous, répétez le bloc « rechercher → boucle » de l’étape Sommeil (étapes 2 à 6, sans la Date de fin), avec la période <b>2 jours</b> et des noms de variables différents :</Box>
-      <div className="small" style={{ margin: '4px 0 6px 34px', lineHeight: 1.9 }}>
-        <div><b>Fréquence cardiaque au repos</b> → <C t="rhr_dates" /> et <C t="rhr_values" /></div>
-        <div><b>Variabilité de la fréquence cardiaque</b> → <C t="hrv_dates" /> et <C t="hrv_values" /></div>
-        <div><b>Poids</b> → <C t="weight_dates" /> et <C t="weight_values" /></div>
-        <div><b>Nombre de pas</b> → <C t="steps_dates" /> et <C t="steps_values" /></div>
-        <div><b>Énergie active</b> → <C t="kcal_dates" /> et <C t="kcal_values" /></div>
-        <div><b>VO2 max</b> (période 30 jours) → <C t="vo2_dates" /> et <C t="vo2_values" /></div>
-        <div><b>Règles</b> (ou Écoulement menstruel, période 7 jours) → <C t="flow_dates" /> et <C t="flow_values" /></div>
+    { t: 'Hyrox Mesures (1/3) : partir de Hyrox Sommeil', c: <>
+      <p style={{ marginTop: 0 }}>Ce raccourci envoie la FC au repos, la variabilité cardiaque, le poids, les pas… Le plus rapide : <b>dupliquer Hyrox Sommeil</b> puis l’adapter. On commence par une seule mesure, la <b>FC au repos</b>.</p>
+      <Box n="1">Dans l’onglet <b>Raccourcis</b>, maintenez appuyé <b>Hyrox Sommeil</b> › <b>Dupliquer</b>. Ouvrez la copie (« Hyrox Sommeil 1 »), touchez son titre en haut › <b>Renommer</b> › <C t="Hyrox Mesures" />.</Box>
+      <Box n="2">Dans <A>Rechercher des échantillons de santé</A> : touchez <b>Analyse du sommeil</b> et choisissez <b>Fréquence cardiaque au repos</b> (tapez « repos » pour la trouver). Dans le filtre Date de début, remplacez <b>1 jour</b> par <b>2 jours</b>.</Box>
+      <Box n="3">Dans la boucle, <b>supprimez</b> la troisième <A>Ajouter à la variable</A> (celle de la variable <b>ends</b>, avec Date de fin) : glissez-la vers la gauche › <b>Supprimer</b>.</Box>
+      <Box n="4">Renommez les deux variables restantes : touchez <b>starts</b> et remplacez par <C t="rhr_dates" /> ; touchez <b>values</b> et remplacez par <C t="rhr_values" />. La Date de début et la Valeur ne changent pas.</Box>
+      <Box n="5">Tout en bas, dans <A>Obtenir le contenu de l’URL</A>, gardez l’adresse, POST, JSON et le champ <b>token</b>. <b>Supprimez</b> les champs <b>starts</b>, <b>ends</b> et <b>values</b> (glissez vers la gauche).</Box>
+      <Box n="6">Ajoutez deux champs <b>Texte</b> : clé <C t="rhr_dates" /> = variable rhr_dates, clé <C t="rhr_values" /> = variable rhr_values.</Box>
+      <Box n="7">Testez avec ▶ (autorisez l’accès si demandé). La réponse doit contenir <b>"days": 1</b> ou plus. Si c’est 0 : la montre n’a pas encore mesuré de FC au repos ces 2 derniers jours.</Box>
+      <Tip>Vérification : de haut en bas, Rechercher (FC au repos) › Répéter avec chaque › Ajouter à la variable rhr_dates › Ajouter à la variable rhr_values › Fin de la répétition › Obtenir le contenu de l’URL (token, rhr_dates, rhr_values).</Tip>
+    </> },
+    { t: 'Hyrox Mesures (2/3) : ajouter les autres mesures', c: <>
+      <p style={{ marginTop: 0 }}>Pour chaque mesure en plus, on recopie le bloc de la FC au repos et on change trois choses : le <b>type</b>, la <b>période</b> et les <b>noms de variables</b>. Ajoutez-en autant que vous voulez, une à la fois.</p>
+      <div className="small" style={{ margin: '4px 0 8px', display: 'grid', gridTemplateColumns: 'auto auto auto', gap: '4px 10px', alignItems: 'center' }}>
+        <b className="muted">Type dans Santé</b><b className="muted">Période</b><b className="muted">Variables</b>
+        {[['Variabilité de la fréquence cardiaque', '2 jours', 'hrv'], ['Poids', '2 jours', 'weight'], ['Nombre de pas', '2 jours', 'steps'], ['Énergie active', '2 jours', 'kcal'], ['VO₂ max — écrit avec un petit « ₂ » : tapez « VO » ou « forme » (Forme cardio). Facultatif', '30 jours', 'vo2'], ['Masse grasse (%)', '7 jours', 'fat'], ['Règles (écoulement menstruel)', '7 jours', 'flow']].map(([ty, pe, k]) => <React.Fragment key={k}><span>{ty}</span><span>{pe}</span><span><C t={k + '_dates'} /> <C t={k + '_values'} /></span></React.Fragment>)}
       </div>
-      {send(2, ['rhr_dates', 'rhr_values', 'hrv_dates', 'hrv_values', '… et ainsi de suite pour chaque mesure ajoutée'].slice(0, 4))}
-      <div className="small muted" style={{ marginLeft: 34 }}>… et de même pour chaque mesure ajoutée (weight_dates, weight_values, steps_dates…).</div>
-      <Box n="6">Testez avec ▶ (réponse <b>"days"</b> ≥ 1), puis ajoutez ce raccourci à l’automatisation de 9:00 : ouvrez-la et ajoutez l’action <A>Exécuter le raccourci</A> › Hyrox Mesures, sous Hyrox Sommeil.</Box>
-      <Tip>Les noms des types peuvent légèrement varier selon la version d’iOS : tapez le début du nom dans la liste (« repos », « variabilité », « pas »…).</Tip>
+      <Box n="1"><b>Copier le bloc</b> : maintenez appuyée l’action <A>Rechercher des échantillons de santé</A> › <b>Sélectionner</b>, puis touchez aussi « Répéter avec chaque », les deux « Ajouter à la variable » et « Fin de la répétition ». Touchez l’icône <b>Dupliquer</b> (deux carrés) en bas. <span className="muted">Si « Sélectionner » n’existe pas sur votre iPhone : maintenez chaque action › Dupliquer, une par une.</span></Box>
+      <Box n="2">La copie apparaît sous le premier bloc. Si elle est en dessous de « Obtenir le contenu de l’URL », faites glisser « Obtenir le contenu de l’URL » <b>tout en bas</b>.</Box>
+      <Box n="3">Dans la copie : changez le <b>Type</b> (par ex. Variabilité de la fréquence cardiaque) et la <b>période</b> du filtre selon le tableau.</Box>
+      <Box n="4">Vérifiez que la copie de <b>« Répéter avec chaque élément dans… »</b> pointe vers <b>la recherche juste au-dessus</b> : touchez le mot bleu « Échantillons de santé » › Sélectionner une variable › choisissez la sortie de la nouvelle recherche (la plus basse).</Box>
+      <Box n="5">Dans les deux « Ajouter à la variable » de la copie : <b>retouchez la bulle « Élément de répétition »</b> › Effacer, puis Sélectionner une variable › Élément de répétition › <b>Date de début</b> (et <b>Valeur</b> pour la deuxième). Ainsi elles lisent bien la nouvelle boucle. Renommez les variables selon le tableau (ex. <C t="hrv_dates" /> et <C t="hrv_values" />).</Box>
+      <Box n="6">Dans <A>Obtenir le contenu de l’URL</A>, ajoutez les deux champs <b>Texte</b> correspondants (ex. <C t="hrv_dates" /> et <C t="hrv_values" />), chacun avec la variable du même nom.</Box>
+      <Tip>Une erreur fréquente : oublier l’étape 4 ou 5. La nouvelle mesure renverrait alors les valeurs de la FC au repos. En cas de doute, testez avec ▶ après chaque mesure ajoutée : la réponse indique les jours et pesées reçus.</Tip>
+    </> },
+    { t: 'Hyrox Mesures (3/3) : tester et automatiser', c: <>
+      <Box n="1">Touchez ▶. Autorisez l’accès à chaque nouveau type de données. Dans la réponse : <b>"days"</b> = jours de mesures reçus, <b>"weights"</b> = pesées, <b>"periods"</b> = cycle.</Box>
+      <Box n="2">Ouvrez l’onglet <b>Automatisation</b>, touchez l’automatisation de <b>9:00</b> (créée pour Hyrox Sommeil). Ajoutez l’action <A>Exécuter le raccourci</A> et choisissez <b>Hyrox Mesures</b>, sous Hyrox Sommeil. <span className="muted">Ou créez une seconde automatisation Heure de la journée, 9:05, Exécuter immédiatement.</span></Box>
+      <Box n="3">Dans l’app : Santé › Forme affiche « Mesures de la montre » (FC au repos, variabilité…) dès le premier envoi.</Box>
+      <Tip><b>"days": 0</b> pour une mesure : vérifiez le Type, la période, et que la montre ou la balance a bien enregistré cette donnée dans Santé. <b>Valeurs bizarres</b> : une variable de la copie lit encore la première boucle (refaites l’étape 5 de la page précédente).</Tip>
     </> },
     { t: 'Raccourci « Hyrox FC »', c: <>
       <p style={{ marginTop: 0 }}>Il envoie la fréquence cardiaque de l’Apple Watch après chaque entraînement : l’app la rattache à la séance chronométrée et affiche le détail par atelier.</p>
