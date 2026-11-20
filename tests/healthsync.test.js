@@ -73,3 +73,22 @@ test('raccourci « Hyrox Mesures » : clés courtes et valeurs avec unités', ()
   assert.equal(V['2026-11-19'].rhr, 54); assert.equal(V['2026-11-19'].kcal, 550); assert.equal(V['2026-11-19'].steps, 4000); assert.equal(V['2026-11-10'].vo2, 44.5)
   assert.equal(L.periods(M, 60).length, 1)
 })
+
+test('dates au format français (Raccourcis sans « Formater la date »)', () => {
+  L.setLocalTz(60)
+  assert.equal(new Date(L.parseDate('19 nov. 2026 à 07:05')).toISOString(), '2026-11-19T06:05:00.000Z')
+  assert.equal(new Date(L.parseDate('19 novembre 2026 à 07:05:12')).toISOString(), '2026-11-19T06:05:12.000Z')
+  assert.equal(new Date(L.parseDate('19/11/2026 07:05')).toISOString(), '2026-11-19T06:05:00.000Z')
+  assert.equal(new Date(L.parseDate('2 févr. 2027 à 23:10')).toISOString(), '2027-02-02T22:10:00.000Z')
+  const e = L.extract({ sleep: { starts: '18 nov. 2026 à 23:30\n19 nov. 2026 à 01:00', ends: '19 nov. 2026 à 01:00\n19 nov. 2026 à 07:00', values: 'Essentiel\nProfond' } })
+  assert.equal(e.sleep.length, 2)
+})
+
+test('raccourci simplifié : champs à plat', () => {
+  L.setLocalTz(60)
+  const e = L.extract({ token: 'x', starts: '18 nov. 2026 à 23:30', ends: '19 nov. 2026 à 07:00', values: 'Essentiel' })
+  assert.equal(e.sleep.length, 1); assert.equal(e.hr.length, 0)
+  const h = L.extract({ token: 'x', dates: '19 nov. 2026 à 18:00\n19 nov. 2026 à 18:01', values: '120\n135' }); assert.equal(h.hr.length, 2)
+  const V = L.vitalsByDay(L.extractMetrics({ token: 'x', rhr_dates: '19 nov. 2026 à 07:00', rhr_values: '53', weight_dates: '19/11/2026 07:10', weight_values: '79,6 kg' }), 60)
+  assert.equal(V['2026-11-19'].rhr, 53); assert.equal(V['2026-11-19'].weight, 79.6)
+})

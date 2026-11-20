@@ -4,11 +4,24 @@
 export type Sample = [number, number]               // [ms epoch, bpm]
 export type SleepRec = { a: number; b: number; v: string }
 
-/** Dates acceptées : ISO 8601, « 2026-11-19 18:01:02 +0100 », secondes ou millisecondes epoch */
+// Fuseau de l'utilisateur (minutes), pour les dates sans fuseau écrites « à la française » par Raccourcis
+let LOCAL_TZ = 60
+export function setLocalTz(min: number) { LOCAL_TZ = min }
+const MOIS: Record<string, number> = { janv: 1, jan: 1, janvier: 1, fevr: 2, févr: 2, fev: 2, fév: 2, fevrier: 2, février: 2, mars: 3, avr: 4, avril: 4, mai: 5, juin: 6, juil: 7, juillet: 7, aout: 8, août: 8, sept: 9, septembre: 9, oct: 10, octobre: 10, nov: 11, novembre: 11, dec: 12, déc: 12, decembre: 12, décembre: 12 }
+/** « 19 nov. 2026 à 07:05 », « 19 novembre 2026 à 07:05:12 », « 19/11/2026 07:05 » (heure locale) */
+function parseFr(s: string): number | null {
+  let m = s.match(/^(\d{1,2})\s+([a-zéûè]+)\.?\s+(\d{4})(?:\s+(?:à\s+)?(\d{1,2})[:h](\d{2})(?::(\d{2}))?)?/i), y, mo, d
+  if (m) { mo = MOIS[m[2].toLowerCase()]; if (!mo) return null; d = +m[1]; y = +m[3] }
+  else { m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(?:à\s+)?(\d{1,2})[:h](\d{2})(?::(\d{2}))?)?/); if (!m) return null; d = +m[1]; mo = +m[2]; y = +m[3] }
+  return Date.UTC(y, mo - 1, d, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) - LOCAL_TZ * 6e4
+}
+
+/** Dates acceptées : ISO 8601, « 2026-11-19 18:01:02 +0100 », format français, secondes ou millisecondes epoch */
 export function parseDate(x: unknown): number | null {
   if (x == null || x === '') return null
   if (typeof x === 'number') return x > 1e11 ? x : x * 1000
-  const s = String(x).trim()
+  const s = String(x).trim().replace(/\u202f|\u00a0/g, ' ')
+  const fr = parseFr(s); if (fr != null) return fr
   if (/^\d{9,13}(\.\d+)?$/.test(s)) { const n = +s; return n > 1e11 ? n : n * 1000 }
   let m = s.match(/^(\d{4}-\d\d-\d\d)[ T](\d\d:\d\d(?::\d\d(?:\.\d+)?)?)\s*(Z|[+-]\d\d:?\d\d)?$/)
   if (m) { const tz = m[3] ? (m[3] === 'Z' ? 'Z' : m[3].replace(/^([+-]\d\d)(\d\d)$/, '$1:$2')) : ''; const t = Date.parse(`${m[1]}T${m[2].length === 5 ? m[2] + ':00' : m[2]}${tz}`); return isNaN(t) ? null : t }
@@ -40,9 +53,11 @@ export function extract(body: any): { hr: Sample[]; sleep: SleepRec[]; sleepNigh
     return { hr, sleep, sleepNights, source }
   }
   // 2) Raccourci : {heart_rate:{dates, values}, sleep:{starts, ends, values}} — listes ou textes (une valeur par ligne)
-  const H = body && (body.heart_rate || body.hr)
+  // Champs à plat (raccourci simplifié) : dates/values = FC ; starts/ends/values = sommeil
+  const flatSleep = body && body.starts && body.ends ? { starts: body.starts, ends: body.ends, values: body.values } : null
+  const H = body && (body.heart_rate || body.hr || (!flatSleep && body.dates && body.values ? { dates: body.dates, values: body.values } : null))
   if (H) { const ds = list(H.dates), vs = list(H.values); for (let i = 0; i < Math.min(ds.length, vs.length); i++) { const t = parseDate(ds[i]), v = num(vs[i]); if (t != null && v != null) hr.push([t, v]) } }
-  const S = body && body.sleep
+  const S = body && (body.sleep || flatSleep)
   if (S) { const as = list(S.starts), bs = list(S.ends), vs = list(S.values); for (let i = 0; i < Math.min(as.length, bs.length); i++) { const a = parseDate(as[i]), b = parseDate(bs[i]); if (a != null && b != null && b > a) sleep.push({ a, b, v: String(vs[i] ?? 'Asleep') }) } }
   return { hr: hr.filter(([, v]) => v > 25 && v < 250), sleep, sleepNights, source }
 }
@@ -143,8 +158,9 @@ export function extractMetrics(body: any): Metrics {
     }
     return out
   }
-  // Raccourci : {metrics: {weight: {dates, values, unit?}, …}} ou directement {weight: {dates, values}}
-  const src = body && typeof body.metrics === 'object' && !Array.isArray(body.metrics) ? body.metrics : body || {}
+  // Raccourci : {metrics: {weight: {dates, values}}}, {weight: {dates, values}} ou à plat {weight_dates, weight_values}
+  const src: any = { ...(body && typeof body.metrics === 'object' && !Array.isArray(body.metrics) ? body.metrics : body || {}) }
+  for (const k of Object.keys(body || {})) { const m = k.match(/^(.+)_dates$/); if (m && body[m[1] + '_values'] != null) src[m[1]] = { dates: body[k], values: body[m[1] + '_values'] } }
   for (const name of Object.keys(src)) {
     const k = keyOf(name), M = src[name]; if (!k || !M || typeof M !== 'object') continue
     const ds = list(M.dates), vs = list(M.values)

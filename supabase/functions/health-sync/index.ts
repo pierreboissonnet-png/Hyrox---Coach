@@ -6,7 +6,7 @@
 // envoyé dans l'en-tête « x-sync-token » (ou « Authorization: Bearer … » pour Health Auto Export).
 // À déployer SANS vérification JWT (le jeton personnel remplace la session).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries, extractMetrics, vitalsByDay, periods, extractWorkouts, activityOf } from './logic.ts'
+import { setLocalTz, extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries, extractMetrics, vitalsByDay, periods, extractWorkouts, activityOf } from './logic.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sync-token', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -20,7 +20,10 @@ function tzOffset(tz: string, at = Date.now()) {
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   if (req.method !== 'POST') return json({ error: 'POST attendu' }, 405)
-  const raw = req.headers.get('x-sync-token') || (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+  let body: any
+  try { body = await req.json() } catch { return json({ error: 'JSON invalide' }, 400) }
+  // Jeton : en-tête x-sync-token, « Authorization: Bearer … » ou champ « token » du JSON (plus simple dans Raccourcis)
+  const raw = String(req.headers.get('x-sync-token') || (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '') || (body && body.token) || '').trim()
   if (!raw || raw.length < 20) return json({ error: 'Jeton manquant' }, 401)
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const { data: tok } = await db.from('health_tokens').select('id,user_id').eq('token_hash', await sha(raw)).maybeSingle()
@@ -29,10 +32,9 @@ Deno.serve(async req => {
   const { data: prof } = await db.from('profiles').select('consent_health').eq('id', uid).single()
   if (!prof || !prof.consent_health) return json({ error: "Activez « Données de santé » dans l'app" }, 403)
 
-  let body: any
-  try { body = await req.json() } catch { return json({ error: 'JSON invalide' }, 400) }
   const tzName = (body && body.timezone) || Deno.env.get('DEFAULT_TZ') || 'Europe/Paris'
   const tz = tzOffset(tzName)
+  setLocalTz(tz)
   const { hr, sleep, sleepNights, source } = extract(body)
   const out = { source, hr_points: hr.length, nights: 0, sessions: [] as string[], days: 0, weights: 0, periods: 0, workouts: 0 }
   const AUTO = 'Santé (auto)', isAuto = (d: any) => !!(d && String(d.source || '').startsWith('Santé'))
