@@ -2,6 +2,8 @@
 import seed from './demo-seed.json'
 
 const KEY = 'hx-demo-db', ME = 'demo-me', P2 = 'demo-partner'
+// Bilan partagé par la partenaire fictive (démo)
+const DEMO_SHARED = [{ user_id: 'demo-partner', data: { exp: 'inter', run: { k5: 1500 }, st: { ski: 300, row: 290, wb: 360 }, self: { push: { state: 'charge', urgency: 3, cur: 80, target: 102 }, wb: { state: 'technique', urgency: 2 }, run: { state: 'vitesse', urgency: 2, cur: 330, target: 310 }, farm: { state: 'maitrise' } }, share: true } }]
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 const iso = d => new Date(d - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10)
 const addDays = n => iso(new Date(Date.now() + n * 864e5))
@@ -126,6 +128,11 @@ export const demoApi = {
     listMany: ids => wait(D().hr_series.filter(h => ids.includes(h.session_id))),
     save(row) { const d = D(); d.hr_series = d.hr_series.filter(h => !(h.session_id === row.session_id && h.user_id === row.user_id)); d.hr_series.push(row); commit(); return wait(row) },
     remove(sid, u) { const d = D(); d.hr_series = d.hr_series.filter(h => !(h.session_id === sid && h.user_id === u)); commit(); return wait(null) },
+  },
+  levels: {
+    shared: ids => wait((D().shared_levels || DEMO_SHARED).filter(x => ids.includes(x.user_id))),
+    share(u, data) { const d = D(); d.shared_levels = (d.shared_levels || DEMO_SHARED).filter(x => x.user_id !== u); d.shared_levels.push({ user_id: u, data }); commit(); return wait(null) },
+    unshare(u) { const d = D(); d.shared_levels = (d.shared_levels || DEMO_SHARED).filter(x => x.user_id !== u); commit(); return wait(null) },
   },
   journal: {
     list: kind => wait(D().journal.filter(j => !kind || j.kind === kind).sort((a, b) => b.day.localeCompare(a.day))),

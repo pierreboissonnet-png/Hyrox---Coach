@@ -71,6 +71,12 @@ const supaApi = {
     update: async (id, patch) => ok(await sb.from('journal').update(patch).eq('id', id).select().single()),
     remove: async id => ok(await sb.from('journal').delete().eq('id', id)),
   },
+  // Bilan « Mon niveau » partagé avec le duo (table shared_levels ; [] si le script SQL n'a pas encore été exécuté)
+  levels: {
+    shared: async ids => { if (!ids.length) return []; const r = await sb.from('shared_levels').select('*').in('user_id', ids); return r.error ? [] : r.data },
+    share: async (uid, data) => ok(await sb.from('shared_levels').upsert({ user_id: uid, data, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })),
+    unshare: async uid => ok(await sb.from('shared_levels').delete().eq('user_id', uid)),
+  },
   health: {
     endpoint: () => URL_ + '/functions/v1/health-sync',
     tokens: async () => ok(await sb.from('health_tokens').select('id,label,created_at,last_used,last_summary').order('created_at', { ascending: false })),

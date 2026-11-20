@@ -3,7 +3,7 @@
 import { STATIONS } from './hyrox.js'
 import { athleteStats, summary } from './analyze.js'
 import { withLevel, REF } from './gaps.js'
-import { predictDuo } from './predict.js'
+import { predictDuo, estimatePartner } from './predict.js'
 import { isCustom, isPlanned, isQuick } from './custom.js'
 
 const DAY = 864e5
@@ -41,12 +41,16 @@ export function datesOf(uids, sessions, from, to) {
 export function soloSeries(uid, sessions, plans, level, dates) {
   return dates.map(d => [dayNum(d), soloTime(statsAt(uid, sessions, plans, level, d))])
 }
-/** Temps du duo estimé à chaque date (sans données du partenaire : on le suppose de même niveau) */
-export function duoSeries(A, B, sessions, plans, levelA, plan, dates) {
+/**
+ * Temps du duo estimé à chaque date. Sans données sur un coéquipier, on l'estime à partir de l'autre,
+ * pondéré par les profils (sexe, âge, poids) : même méthode que « Temps prédit ».
+ */
+export function duoSeries(A, B, sessions, plans, levelA, plan, dates, pA = null, pB = null, levelB = null) {
   return dates.map(d => {
-    const a = fillStats(statsAt(A, sessions, plans, levelA, d)), b = B ? fillStats(statsAt(B, sessions, plans, null, d)) : null
+    let a = fillStats(statsAt(A, sessions, plans, levelA, d)), b = B ? fillStats(statsAt(B, sessions, plans, levelB, d)) : null
     if (!a && !b) return [dayNum(d), null]
-    return [dayNum(d), predictDuo(a || b, b || a, plan).total]
+    if (!a) a = estimatePartner(b, pB, pA); if (!b) b = estimatePartner(a, pA, pB)
+    return [dayNum(d), predictDuo(a, b, plan).total]
   })
 }
 /** Temps réels des Hyrox complets (simulations, courses) */

@@ -8,7 +8,7 @@ export const COLORS = { A: '#0a84ff', B: '#ff9f0a', C: '#30d158' }
 const yt0 = (a, b) => Array.from({ length: 5 }, (_, i) => a + (b - a) * i / 4)
 export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v), yFmt = v => Math.round(v), yMin, yMax, marks = [] }) {
   const W = 640, H = height * 1.25, R = 10, T = 10, B = 30
-  const all = series.flatMap(s => s.pts)
+  const all = series.flatMap(s => s.pts).filter(p => p[1] != null && Number.isFinite(p[1]))   // les trous (null) ne comptent pas dans l'échelle
   if (!all.length) return null
   const x0 = Math.min(...all.map(p => p[0])), x1 = Math.max(...all.map(p => p[0])) || 1
   let y0 = yMin ?? Math.min(...all.map(p => p[1])), y1 = yMax ?? Math.max(...all.map(p => p[1]))

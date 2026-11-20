@@ -102,7 +102,9 @@ export function Chips({ value, options, onChange, label }) {
 }
 export function Sheet({ title, onClose, children, actions, footer, noBug }) {
   useEffect(() => { const k = e => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k) }, [onClose])
-  return <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+  // Molette ou trackpad au-dessus du fond grisé : on fait défiler la feuille
+  const wheel = e => { if (e.target === e.currentTarget) { const sh = e.currentTarget.querySelector('.sheet'); if (sh) sh.scrollTop += e.deltaY } }
+  return <div className="backdrop" onWheel={wheel} onClick={e => e.target === e.currentTarget && onClose()}>
     <div className="sheet glass" role="dialog" aria-modal="true" aria-label={title}>
       <div className="grab" />
       <div className="sheet-head"><button className="btn plain" onClick={onClose}>Fermer</button><h3>{title}</h3>

@@ -16,7 +16,7 @@ export function BugSheet({ shot, ctx, onClose }) {
       const r = await api.bugs.add({ text: text.trim().slice(0, 2000), pseudo: profile.display_name || '', ctx, img: withImg ? shot : null })
       api.bugs.triage(r.id).catch(() => {})   // premier diagnostic de Claude, en arrière-plan
       toast(`Merci ! Signalement n°${r.no} transmis aux administrateurs.`); onClose()
-    } catch (e) { setBusy(false); setMsg(navigator.onLine === false ? 'Pas de réseau : réessayez une fois connecté (votre description reste dans le champ).' : /row-level|policy/i.test(e.message) ? 'Trop de signalements aujourd’hui : réessayez demain.' : e.message || 'Envoi impossible, réessayez.') }
+    } catch (e) { setBusy(false); setMsg(navigator.onLine === false ? 'Pas de réseau : réessayez une fois connecté (votre description reste dans le champ).' : /row-level|policy/i.test(e.message) ? 'Vous avez déjà 30 signalements en attente depuis 24 h : réessayez quand une partie aura été traitée.' : e.message || 'Envoi impossible, réessayez.') }
   }
   return <Sheet title="Signaler un problème" onClose={onClose} noBug actions={<button className="btn plain" onClick={send} disabled={busy}>Envoyer</button>}
     footer={<div className="row-gap"><button className="btn glass" onClick={onClose}>Annuler</button><button className="btn" style={{ flex: 1 }} onClick={send} disabled={busy}>{busy ? 'Envoi…' : 'Envoyer'}</button></div>}>

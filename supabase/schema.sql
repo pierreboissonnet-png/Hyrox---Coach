@@ -241,10 +241,10 @@ create table if not exists public.bug_reports (
   created_at timestamptz not null default now(),
   updated_at timestamptz
 );
--- Au plus 30 signalements par jour et par personne
+-- Anti-abus : au plus 30 signalements EN ATTENTE (non traités) envoyés en 24 h ; les administrateurs ne sont pas limités
 create or replace function public.bug_quota_ok() returns boolean
 language sql stable security definer set search_path = public as $$
-  select count(*) < 30 from bug_reports where user_id = auth.uid() and created_at > now() - interval '1 day';
+  select public.is_admin() or (select count(*) from bug_reports where user_id = auth.uid() and created_at > now() - interval '1 day' and status in ('new','doing')) < 30;
 $$;
 -- Accès de service pour Claude (fonction « bugs-api ») : peut être coupé par un administrateur
 create table if not exists public.app_config (key text primary key, value jsonb not null default '{}'::jsonb);
@@ -503,3 +503,22 @@ create trigger bug_comment_reopen after insert on public.bug_comments for each r
 grant select, insert, delete on public.bug_comments to authenticated;
 grant all on public.bug_comments to service_role;
 grant execute on function public.bug_is_mine(uuid) to authenticated, service_role;
+
+-- ---------- Partage du bilan « Mon niveau » avec son duo (sur accord explicite) ----------
+-- Copie du bilan, lisible uniquement par les coéquipiers ACTUELS ; le journal reste strictement privé.
+create or replace function public.shares_active_team(u uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists(select 1 from team_members a join team_members b on a.team_id = b.team_id
+                where a.user_id = auth.uid() and b.user_id = u and a.left_at is null and b.left_at is null);
+$$;
+create table if not exists public.shared_levels (
+  user_id uuid primary key references auth.users(id) on delete cascade default auth.uid(),
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.shared_levels enable row level security;
+drop policy if exists sl_read on public.shared_levels;
+create policy sl_read on public.shared_levels for select using (user_id = auth.uid() or public.shares_active_team(user_id));
+drop policy if exists sl_write on public.shared_levels;
+create policy sl_write on public.shared_levels for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+grant select, insert, update, delete on public.shared_levels to authenticated;

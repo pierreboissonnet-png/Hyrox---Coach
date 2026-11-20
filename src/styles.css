@@ -21,14 +21,18 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent }
-html { -webkit-text-size-adjust: 100%; background: var(--bg1) }
+html { -webkit-text-size-adjust: 100%; background: var(--bg2); min-height: 100% }
+/* Fond sur un calque fixe : iOS ignore « background-attachment: fixed » et le fond s'arrêtait en cours de défilement */
 body {
   margin: 0; font-family: var(--font); font-size: 17px; line-height: 1.35; color: var(--ink); letter-spacing: -.01em;
+  background: transparent; min-height: 100dvh;
+}
+body::before {
+  content: ""; position: fixed; z-index: -1; left: 0; right: 0; top: -10vh; height: calc(100lvh + 20vh); pointer-events: none;
   background: radial-gradient(60vmax 60vmax at 10% -10%, var(--blob1), transparent 60%),
               radial-gradient(50vmax 50vmax at 110% 20%, var(--blob2), transparent 60%),
               radial-gradient(60vmax 60vmax at 40% 120%, var(--blob3), transparent 60%),
               linear-gradient(160deg, var(--bg1), var(--bg2));
-  background-attachment: fixed; min-height: 100dvh;
 }
 button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit }
 button { cursor: pointer; border: 0; background: none; padding: 0; touch-action: manipulation }
@@ -221,3 +225,7 @@ input[type=range] { width: 100%; accent-color: var(--accent) }
 body:has(.backdrop) .toast { bottom: auto; top: calc(12px + env(safe-area-inset-top)) }
 [data-blk] > .row { display: flex; padding: 6px 14px 14px; box-sizing: border-box; width: 100% }
 [data-blk] > .row input, [data-blk] > .row select, [data-blk] > .row textarea { max-width: 100%; box-sizing: border-box }
+
+/* Feuilles : défilement interne fiable (iPhone) et page derrière figée */
+.sheet { overscroll-behavior: contain; -webkit-overflow-scrolling: touch }
+html:has(.backdrop), body:has(.backdrop) { overflow: hidden }

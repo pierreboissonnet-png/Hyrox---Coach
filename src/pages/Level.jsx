@@ -2,8 +2,8 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Field, Seg, Icon, Chips, useToast, useLoad, parseNum, TIME, maskT } from '../ui.jsx'
-import { STATIONS, fmt, parseT, todayISO, frDate } from '../lib/hyrox.js'
+import { Page, Sec, List, Field, Seg, Icon, Chips, Switch, useToast, useLoad, parseNum, TIME, maskT } from '../ui.jsx'
+import { STATIONS, SEGS, normPlan, fmt, parseT, todayISO, frDate } from '../lib/hyrox.js'
 import { athleteStats } from '../lib/analyze.js'
 import { customInsights } from '../lib/load.js'
 import { gapsOf, withLevel, withSelf, SELF_STATES, URGENCY, WEIGHTED, STD_LOADS } from '../lib/gaps.js'
@@ -28,7 +28,7 @@ export function LevelPage() {
 
 function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
   const d0 = (cur && cur.data) || {}
-  const [f, setF] = useState({ exp: d0.exp || 'inter', hours: d0.hours ?? '', run: { ...(d0.run || {}) }, st: { ...(d0.st || {}) }, rm: JSON.parse(JSON.stringify(d0.rm || {})), pdc: { ...(d0.pdc || {}) }, hyrox: { ...(d0.hyrox || {}) }, self: JSON.parse(JSON.stringify(d0.self || {})) })
+  const [f, setF] = useState({ share: !!d0.share, exp: d0.exp || 'inter', hours: d0.hours ?? '', run: { ...(d0.run || {}) }, st: { ...(d0.st || {}) }, rm: JSON.parse(JSON.stringify(d0.rm || {})), pdc: { ...(d0.pdc || {}) }, hyrox: { ...(d0.hyrox || {}) }, self: JSON.parse(JSON.stringify(d0.self || {})) })
   const [nums, setNums] = useState(!!(d0.run || d0.st || d0.rm) && !d0.self)
   const [busy, setBusy] = useState(false)
   const F = profile.sex === 'F'
@@ -37,12 +37,15 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
     const ins = customInsights(sessions, profile.id), W = withLevel(athleteStats(profile.id, sessions, plansOf(teams)), ins.e1rm, { data: f })
     const G = withSelf(gapsOf(W.stats, { profile, e1rm: W.e1rm, weakSt: ins.weakSt }), f.self); return G.filter(g => g.kind !== 'test').slice(0, 4)
   }, [f, sessions])
-  async function save() {
+  async function save(over) {
     setBusy(true)
     try {
-      const data = { ...f, hours: parseNum(f.hours), updated: todayISO() }
+      const data = { ...f, ...(over || {}), hours: parseNum(f.hours), updated: todayISO() }
       if (cur) await api.journal.update(cur.id, { day: todayISO(), data }); else await api.journal.add({ kind: 'level', day: todayISO(), data })
-      toast('Bilan enregistré'); onSaved()
+      // Copie partagée avec le duo (sur accord) : mise à jour à chaque enregistrement, retirée si on ne partage plus
+      let shareErr = ''
+      try { if (data.share) await api.levels.share(profile.id, data); else await api.levels.unshare(profile.id) } catch (e) { shareErr = e.message }
+      toast(shareErr && data.share ? 'Bilan enregistré, mais partage indisponible (script « partage-niveau.sql » à exécuter dans Supabase)' : over && 'share' in over ? (data.share ? 'Niveau partagé avec votre duo' : 'Niveau de nouveau privé') : 'Bilan enregistré'); onSaved()
     } catch (e) { toast('Enregistrement impossible : ' + e.message) } finally { setBusy(false) }
   }
   return <Page back="#/moi" title="Mon niveau" subtitle={cur ? 'Bilan du ' + frDate(cur.day) + '. Mettez-le à jour quand vous progressez.' : 'Renseignez ce que vous savez déjà. Tout est facultatif : chaque temps connu affine le plan.'}>
@@ -81,6 +84,10 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
       </List>
     </Sec>
     </>}
+    <Sec title="Partage avec mon duo" foot="Votre coéquipier voit alors votre courbe, votre ressenti et vos objectifs (charges, allure) sur la page du duo, pour viser ensemble les bons ateliers. Vos données de santé (sommeil, poids, cycle…) ne sont jamais partagées. Désactivable à tout moment.">
+      <List><div className="row"><span className="label"><span className="t">Partager mon niveau avec mon duo</span><span className="s">{f.share ? 'Partagé : visible par vos coéquipiers actuels' : 'Privé : visible par vous seul(e)'}</span></span>
+        <Switch checked={f.share} label="Partager mon niveau avec mon duo" onChange={v => { setF(x => ({ ...x, share: v })); save({ share: v }) }} /></div></List>
+    </Sec>
     <h2 className="sec">Ce que le plan en retient</h2>
     <div className="glass card">{preview.length ? preview.map((g, i) => <div className="tip" key={g.id}><span className={'dot ' + (i === 0 ? 'bad' : 'warn')} /><span className="small"><b>{g.label}</b> : {g.why}.</span></div>) : <div className="small muted">Pas de lacune nette avec ces informations : le plan alternera les ateliers.</div>}</div>
     <button className="btn block" style={{ marginTop: 14 }} disabled={busy} onClick={save}>{busy ? 'Enregistrement…' : cur ? 'Mettre à jour mon bilan' : 'Enregistrer mon bilan'}</button>
@@ -120,8 +127,11 @@ const lk = { background: 'none', border: 0, padding: 0, color: 'var(--accent)', 
 function LevelTrend({ level }) {
   const { profile, sessions, teams, races } = useApp()
   const planJ = useLoad(() => api.journal.list('plan'), [])
+  const main0 = mainRace(races), team0 = main0 && main0.format === 'duo' && main0.team_id ? teams.find(t => t.id === main0.team_id) : null
+  const other0 = team0 ? [slotsOf(team0).A, slotsOf(team0).B].find(u => u && u !== profile.id) : null
+  const sh = useLoad(() => other0 ? api.levels.shared([other0]) : [], [other0])
   const T = useMemo(() => {
-    if (planJ.loading) return null
+    if (planJ.loading || sh.loading) return null
     const plans = plansOf(teams), today = todayISO(), main = mainRace(races), plan = (planJ.data || [])[0]
     const mine = sessions.filter(s => s.athletes && Object.values(s.athletes).includes(profile.id)).map(s => s.session_date).filter(d => d <= today).sort()
     let from = (plan && plan.data && plan.data.created) || mine[0] || addDays(today, -28)
@@ -132,16 +142,19 @@ function LevelTrend({ level }) {
     const real = realResults(sessions, plans, s => !s.team_id && s.athletes && s.athletes.A === profile.id)
     const E0 = firstOf(pts)
     let goal = null, why = ''
-    if (main && main.goal_seconds && E0) {
-      const team = main.format === 'duo' && main.team_id ? teams.find(t => t.id === main.team_id) : null
+    const team = main && main.format === 'duo' && main.team_id ? teams.find(t => t.id === main.team_id) : null
+    const planTot = team ? SEGS.reduce((x, g) => x + (normPlan(team.plan).obj[g.id] || 0), 0) : 0
+    const target = main ? (main.goal_seconds && planTot ? Math.min(main.goal_seconds, planTot) : (main.goal_seconds || planTot || null)) : null   // le plus ambitieux
+    if (target && E0) {
       if (team) {   // en duo : même progression relative que celle demandée au duo
         const sl = slotsOf(team), other = sl.A === profile.id ? sl.B : sl.A
-        const start = duoSeries(profile.id, other, sessions, plans, level, team.plan, [isoOfNum(E0[0])])[0][1]
-        if (start) { goal = Math.round(E0[1] * main.goal_seconds / start); why = `En duo, votre objectif individuel suit la progression demandée au duo (${fmt(start)} → ${fmt(main.goal_seconds)}).` }
-      } else goal = main.goal_seconds
+        const op = (team.members.find(m => m.user_id === other) || {}).profile || null, ol = (sh.data || []).find(x => x.user_id === other) || null
+        const start = duoSeries(profile.id, other, sessions, plans, level, team.plan, [isoOfNum(E0[0])], profile, op, ol)[0][1]
+        if (start) { goal = Math.round(E0[1] * Math.min(1, target / start)); why = `En duo, votre objectif individuel suit la progression demandée au duo (${fmt(start)} → ${fmt(target)}).` }
+      } else goal = target
     }
     return { pts, real, goal, raceIso: main ? main.race_date : null, expected: goal ? expectedCurve(isoOfNum(E0[0]), E0[1], main.race_date, goal) : [], why, main }
-  }, [planJ.loading, sessions, teams, races, level])
+  }, [planJ.loading, sh.loading, sessions, teams, races, level])
   if (!T) return null
   if (!firstOf(T.pts)) return <div className="glass card small"><b>Ma courbe de progression</b><div className="muted">Elle apparaît dès que l’app connaît votre allure de course et au moins 3 ateliers (séances enregistrées ou temps du bilan ci-dessous).</div></div>
   return <TrendCard title="Ma courbe de progression" raceIso={T.raceIso} goal={T.goal} expected={T.expected}

@@ -8,7 +8,7 @@ import { summary, athleteStats, isComplete, cyclePerformance } from '../lib/anal
 import { normData } from '../lib/session.js'
 import { predictDuo, estimatePartner, planFromPrediction } from '../lib/predict.js'
 import { plansOf, partnerOf, RACE_TYPE, upcoming } from './common.js'
-import { gapsOf } from '../lib/gaps.js'
+import { gapsOf, withSelf, SELF_STATES } from '../lib/gaps.js'
 import { datesOf, soloSeries, duoSeries, realResults, expectedCurve, firstOf, lastOf, valueAt, isoOfNum, dayNum, statsAt, fillStats } from '../lib/trend.js'
 import { addDays } from '../lib/plan.js'
 import { TrendCard } from './Trend.jsx'
@@ -170,53 +170,76 @@ function Predictions({ team }) {
  * puis objectifs de chaque coéquipier et prochain palier à atteindre.
  */
 function TeamTrend({ t, objTotal }) {
-  const { sessions, teams, races, profile } = useApp()
+  const { sessions, teams, races, profile, reload } = useApp(), toast = useToast()
+  const sl0 = slotsOf(t), others = [sl0.A, sl0.B].filter(u => u && u !== profile.id)
   const lv = useLoad(() => api.journal.list('level'), [])
+  const sh = useLoad(() => api.levels.shared(others), [others.join()])
   const T = useMemo(() => {
-    if (lv.loading) return null
+    if (lv.loading || sh.loading) return null
     const plans = plansOf(teams), today = todayISO(), sl = slotsOf(t), level = (lv.data || [])[0] || null
-    const lvOf = uid => uid === profile.id ? level : null   // le bilan du partenaire reste privé
+    // Mon bilan (privé) pour moi ; celui du coéquipier seulement s'il l'a partagé
+    const lvOf = uid => uid === profile.id ? level : ((sh.data || []).find(x => x.user_id === uid) || null)
     const race = upcoming(races).filter(r => r.team_id === t.id).sort((a, b) => (a.priority === 'A' ? 0 : 1) - (b.priority === 'A' ? 0 : 1))[0] || null
-    const goal = (race && race.goal_seconds) || objTotal
+    // Un seul objectif : le plus ambitieux entre la course et le plan
+    const raceGoal = race && race.goal_seconds, goal = raceGoal && objTotal ? Math.min(raceGoal, objTotal) : (raceGoal || objTotal)
+    const conflict = raceGoal && objTotal && Math.abs(raceGoal - objTotal) > 30 ? { raceGoal, objTotal } : null
     const ts = sessions.filter(s => s.team_id === t.id).map(s => s.session_date).filter(d => d <= today).sort()
-    let from = ts[0] || addDays(today, -28)
-    if (from > addDays(today, -7)) from = addDays(today, -7)
+    let from = ts[0] && ts[0] < addDays(today, -56) ? ts[0] : addDays(today, -56)
     if (from < addDays(today, -180)) from = addDays(today, -180)
     const ids = [sl.A, sl.B].filter(Boolean), dates = datesOf(ids, sessions, from, today)
-    const duo = duoSeries(sl.A, sl.B, sessions, plans, lvOf(sl.A), t.plan, dates)
+    const prof = u => (t.members.find(x => x.user_id === u) || {}).profile || null
+    const duo = duoSeries(sl.A, sl.B, sessions, plans, lvOf(sl.A), t.plan, dates, prof(sl.A), prof(sl.B), lvOf(sl.B))
     const solo = Object.fromEntries(ids.map(u => [u, soloSeries(u, sessions, plans, lvOf(u), dates)]))
     const real = realResults(sessions, plans, s => s.team_id === t.id)
     const E0 = firstOf(duo), raceIso = race ? race.race_date : null
     const expected = E0 && raceIso ? expectedCurve(isoOfNum(E0[0]), E0[1], raceIso, goal) : []
-    // Objectifs individuels : même progression relative que le duo
-    const r = E0 ? goal / E0[1] : null
+    // Objectifs individuels : même progression relative que le duo + objectifs déclarés dans « Mon niveau »
+    const r = E0 ? Math.min(1, goal / E0[1]) : null
     const who = ids.map(u => {
-      const m = t.members.find(x => x.user_id === u), pts = solo[u], s0 = firstOf(pts), now = lastOf(pts)
-      const G = gapsOf(statsAt(u, sessions, plans, lvOf(u), today), { profile: m ? m.profile : {} }).filter(g => g.kind !== 'test').slice(0, 2)
-      return { u, name: m ? m.profile.display_name : '?', color: u === sl.A ? COLORS.A : COLORS.B, now: now && now[1], target: s0 && r ? Math.round(s0[1] * r) : null, gaps: G }
+      const m = t.members.find(x => x.user_id === u), pts = solo[u], s0 = firstOf(pts), now = lastOf(pts), L = lvOf(u)
+      const G = withSelf(gapsOf(statsAt(u, sessions, plans, L, today), { profile: m ? m.profile : {} }), L && L.data && L.data.self).filter(g => g.kind !== 'test').slice(0, 3)
+      return { u, me: u === profile.id, name: m ? m.profile.display_name : '?', color: u === sl.A ? COLORS.A : COLORS.B, now: now && now[1], target: s0 && r ? Math.round(s0[1] * r) : null, gaps: G,
+        shared: u === profile.id ? !!(level && level.data && level.data.share) : !!L, self: (L && L.data && L.data.self) || null }
     })
     // Prochain palier : là où la trajectoire attend le duo dans 4 semaines (ou à la prochaine course avant)
     const nowD = lastOf(duo), next = upcoming(races).find(x => x.team_id === t.id && raceIso && x.race_date < raceIso)
     const stepIso = next && next.race_date < addDays(today, 42) ? next.race_date : raceIso && addDays(today, 28) > raceIso ? raceIso : addDays(today, 28)
     const stepV = expected.length ? Math.round(valueAt(expected, dayNum(stepIso))) : null
     const a = fillStats(statsAt(sl.A, sessions, plans, lvOf(sl.A), today)), b = sl.B ? fillStats(statsAt(sl.B, sessions, plans, lvOf(sl.B), today)) : null
-    const pred = a || b ? predictDuo(a || b, b || a, t.plan) : null, plan = normPlan(t.plan)
+    const pred = a || b ? predictDuo(a || estimatePartner(b, prof(sl.B), prof(sl.A)), b || estimatePartner(a, prof(sl.A), prof(sl.B)), t.plan) : null, plan = normPlan(t.plan)
     const prio = pred ? STATIONS.map(x => ({ x, d: pred.seg[x.id] - (plan.obj[x.id] || 0) })).sort((p, q) => q.d - p.d)[0] : null
-    return { duo, solo, real, expected, goal, race, raceIso, who, nowD, stepIso, stepV, next, prio, sl }
-  }, [lv.loading, sessions, teams, races, t])
+    return { duo, solo, real, expected, goal, race, raceIso, who, nowD, stepIso, stepV, next, prio, sl, conflict }
+  }, [lv.loading, sh.loading, sessions, teams, races, t])
+  async function alignRace() {
+    try { await api.races.save({ id: T.race.id, goal_seconds: T.conflict.objTotal }); await reload(['races']); toast('Objectif de la course aligné sur le plan') } catch (e) { toast('Modification impossible : ' + e.message) }
+  }
+  async function alignPlan() {
+    const P = normPlan(t.plan), f = T.conflict.raceGoal / T.conflict.objTotal, obj = Object.fromEntries(Object.entries(P.obj).map(([k, v]) => [k, Math.round(v * f)]))
+    try { await api.teams.update(t.id, { plan: { ...t.plan, obj } }); await reload(['teams']); toast('Objectifs du plan alignés sur la course') } catch (e) { toast('Modification impossible : ' + e.message) }
+  }
   if (!T || !firstOf(T.duo)) return <div className="glass card small"><b>Tendances du duo</b><div className="muted">Les courbes apparaissent dès que l’app connaît l’allure de course et au moins 3 ateliers (séances du duo ou bilan « Mon niveau »).</div></div>
+  const partnerHidden = T.who.find(w => !w.me && !w.shared), meHidden = T.who.find(w => w.me && !w.shared)
   return <>
     <TrendCard title="Tendances du duo" raceIso={T.raceIso} goal={T.goal} expected={T.expected}
       lines={[{ label: 'Duo (estimé)', color: COLORS.C, pts: T.duo, dots: true, width: 3 },
         ...T.who.map(w => ({ label: w.name + ' (solo)', color: w.color, pts: T.solo[w.u], width: 1.5, opacity: 0.8 })),
         ...(T.real.length ? [{ label: 'Séances complètes', color: '#ff375f', pts: T.real, dots: true, width: 0.01 }] : [])]}
-      foot={T.race ? (T.race.goal_seconds ? '' : 'Pas d’objectif de temps sur « ' + T.race.name + ' » : la trajectoire vise le total du plan.') : 'Programmez un Hyrox avec ce duo pour voir la trajectoire jusqu’au jour J.'} />
+      foot={T.race ? '' : 'Programmez un Hyrox avec ce duo pour voir la trajectoire jusqu’au jour J.'}>
+      {T.conflict && <div className="note small" style={{ marginBottom: 0 }}>
+        Deux objectifs différents : <b>{fmt(T.conflict.raceGoal)}</b> pour « {T.race.name} » et <b>{fmt(T.conflict.objTotal)}</b> dans le plan. La courbe vise le plus ambitieux ({fmt(T.goal)}).
+        <div className="row-gap" style={{ marginTop: 6 }}>{T.conflict.raceGoal > T.conflict.objTotal
+          ? <button className="btn tinted small" onClick={alignRace}>Mettre la course à {fmt(T.conflict.objTotal)}</button>
+          : <button className="btn tinted small" onClick={alignPlan}>Ajuster le plan à {fmt(T.conflict.raceGoal)}</button>}</div></div>}
+    </TrendCard>
     <h2 className="sec">Objectifs de chacun</h2>
     <List>{T.who.map(w => <div className="row stack" key={w.u}>
-      <div className="row-gap"><span style={{ width: 10, height: 10, borderRadius: 5, background: w.color, display: 'inline-block' }} /><b>{w.name}</b><span className="spacer" />
+      <div className="row-gap"><span style={{ width: 10, height: 10, borderRadius: 5, background: w.color, display: 'inline-block' }} /><b>{w.name}{w.me ? ' (moi)' : ''}</b><span className="spacer" />
         <span className="small">solo estimé <b className="num">{w.now ? fmt(w.now) : '—'}</b>{w.target ? <> → visé <b className="num">{fmt(w.target)}</b></> : ''}</span></div>
-      <span className="small muted">{w.gaps.length ? 'Priorités : ' + w.gaps.map(g => g.label + ' (' + g.why + ')').join(' ; ') : 'Pas de lacune nette avec les données actuelles.'}</span>
+      <DeclaredGoals self={w.self} sex={(t.members.find(x => x.user_id === w.u) || {}).profile?.sex} />
+      {w.gaps.length > 0 && <span className="small muted">Priorités du plan : {w.gaps.map(g => g.label).join(', ')}.</span>}
+      {!w.me && !w.shared && <span className="small muted">{w.name} n’a pas encore partagé son niveau : ses objectifs et sa courbe apparaîtront ici s’il ou elle l’active dans « Mon niveau ».</span>}
     </div>)}</List>
+    {meHidden && <a className="btn glass small block" style={{ marginTop: 8 }} href="#/moi/niveau">Partager mon niveau avec {partnerHidden ? 'mon duo' : T.who.find(w => !w.me)?.name || 'mon duo'}</a>}
     {T.stepV != null && T.nowD && <>
       <h2 className="sec">Prochain objectif du duo</h2>
       <div className="glass card">
@@ -226,6 +249,28 @@ function TeamTrend({ t, objTotal }) {
           {T.prio && T.prio.d > 5 ? <> Plus gros levier : <b>{T.prio.x.label}</b> ({fd(T.prio.d)} sur l’objectif du plan).</> : ''}</p>
       </div></>}
   </>
+}
+
+/** Objectifs déclarés dans « Mon niveau » : charges et allure actuelles → visées, avec jauge, et ateliers urgents */
+const URG = { 1: ['faible', ''], 2: ['moyenne', 'warn'], 3: ['haute', 'bad'] }
+const paceTxt = s => Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0') + '/km'
+function DeclaredGoals({ self }) {
+  if (!self) return null
+  const label = id => id === 'run' ? 'Course' : id === 'force' ? 'Force générale' : (STATION[id] || {}).label || id
+  const kind = id => id === 'run' ? 'run' : id === 'force' ? 'force' : 'station'
+  const L = Object.entries(self).filter(([, v]) => v && v.state && v.state !== 'maitrise' && v.state !== 'inconnu').sort((a, b) => (b[1].urgency || 2) - (a[1].urgency || 2)).slice(0, 4)
+  if (!L.length) return <span className="small muted">Ressenti : tout est maîtrisé ou non renseigné.</span>
+  return <div style={{ display: 'grid', gap: 6, margin: '2px 0' }}>{L.map(([id, v]) => {
+    const st = ((SELF_STATES[kind(id)] || []).find(x => x[0] === v.state) || [0, v.state])[1]
+    const run = id === 'run', has = v.cur && v.target, pct = has ? Math.max(0, Math.min(1, run ? v.target / v.cur : v.cur / v.target)) : null
+    const u = URG[v.urgency || 2]
+    return <div key={id} className="small">
+      <div className="row-gap" style={{ gap: 6 }}><b>{label(id)}</b><span className="muted">{st.toLowerCase()}</span><span className="spacer" />{u[1] ? <span className={'badge ' + u[1]}>urgence {u[0]}</span> : null}</div>
+      {has && <div className="row-gap" style={{ gap: 8, marginTop: 3, flexWrap: 'nowrap' }}>
+        <span style={{ flex: 1, position: 'relative', height: 8, background: 'var(--fill)', borderRadius: 99 }}><span style={{ position: 'absolute', inset: 0, width: pct * 100 + '%', background: pct >= 1 ? 'var(--good)' : 'var(--accent)', borderRadius: 99 }} /></span>
+        <span className="num" style={{ whiteSpace: 'nowrap' }}>{run ? paceTxt(v.cur) + ' → ' + paceTxt(v.target) : v.cur + ' → ' + v.target + ' kg'}</span></div>}
+    </div>
+  })}</div>
 }
 
 // ---------- éditeur de plan ----------
