@@ -61,3 +61,20 @@ test('douleurs et étirements', () => {
   assert.equal(playSteps(ROUTINE['apres-course'].items).length, 12)
   assert.equal(suggestRoutine({ data: { format: 'custom', blocks: [newBlock('bench')] } }).id, 'haut-corps')
 })
+test('bilan de niveau : complète les séances', async () => {
+  const { withLevel } = await import('../src/lib/gaps.js')
+  const W = withLevel({ st: { ski: 250 }, pace: null }, { squat: 90 }, { data: { st: { ski: 999, wb: 420 }, run: { k5: 1500 }, rm: { squat: { load: 80, reps: 5 }, deadlift: { load: 100, reps: 3 } } } })
+  assert.equal(W.stats.st.ski, 250); assert.equal(W.stats.st.wb, 420); assert.equal(Math.round(W.stats.pace), 330)
+  assert.equal(W.e1rm.squat, 93.33333333333333 > 90 ? 80 * (1 + 5 / 30) : 90); assert.equal(Math.round(W.e1rm.deadlift), 110)
+})
+test('semaine type, suggestions de course, lacunes comparées', async () => {
+  const m = await import('../src/lib/plan.js')
+  const T = [{ type: 'coach', act: 'spinning', intensity: 'modere', min: 45 }, { type: 'free' }, { type: 'renfo' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'rest' }]
+  const p = m.createPlan({ race: { id: 'r', name: 'X', race_date: '2027-03-14', format: 'solo' }, from: '2026-11-20', perWeek: 4, gaps: [{ kind: 'test', label: 'Données insuffisantes' }], template: T })
+  assert.deepEqual(p.gapsAt, [])
+  p.weeks.slice(0, -1).forEach(w => { assert.equal(w.days[0].key, 'coach'); assert.equal(w.days[6].key, 'repos'); assert.ok(w.days.filter(d => d.key !== 'repos').length <= 4) })
+  assert.ok(p.weeks[2].days[2].title.includes('renfo sans coach'))
+  const R = m.runSuggestions({ week: p.weeks[0], doneOn: () => false, today: p.weeks[0].days[5].date, gaps: [] })
+  assert.equal(R.list[0].title, 'Footing de reprise')
+  const q = m.addToWeek(p, p.weeks[0].start, R.days[0].date, R.list[0]); assert.ok(q.weeks[0].days.find(d => d.date === R.days[0].date).added)
+})

@@ -5,6 +5,9 @@ const G = (fmt, items, o = {}) => ({ type: 'group', fmt, rounds: o.rounds ?? 4, 
 
 export const LIB_CATS = [['renfo', 'Renforcement'], ['hyrox', 'Hyrox'], ['cardio', 'Cardio et course'], ['core', 'Gainage'], ['mob', 'Mobilité']]
 export const LIBRARY = [
+  { id: 'test-niveau', cat: 'hyrox', name: 'Test de niveau', desc: 'Chaque effort à fond, récupération complète : vos temps de référence pour le plan. ≈ 75 min. Faites les ateliers sans sled si vous n’en avez pas.',
+    blocks: [B('run', 1, { meters: 1000 }, { rest: 240, note: 'à fond, après 10 min d’échauffement' }), B('ski', 1, { meters: 1000 }, { rest: 240, note: 'à fond' }), B('row', 1, { meters: 1000 }, { rest: 240, note: 'à fond' }),
+      B('farm', 1, { meters: 200 }, { rest: 180, note: 'poids de votre catégorie' }), B('lunge', 1, { meters: 100 }, { rest: 180, note: 'poids de votre catégorie' }), B('burp', 1, { meters: 80 }, { rest: 180 }), B('wb', 1, { reps: 100 }, { rest: 0, note: 'poids de votre catégorie' })] },
   { id: 'renfo-bas', cat: 'renfo', name: 'Renfo bas du corps', desc: 'Squat, soulevé de terre jambes tendues, fentes bulgares, mollets. ≈ 55 min.',
     blocks: [B('squat', 4, { reps: 6, load: 60, rir: 2 }, { rest: 150, tempo: '3-1-1' }), B('rdl', 3, { reps: 8, load: 50, rir: 2 }, { rest: 120 }), B('bulgarian', 3, { reps: 8, load: 12 }, { rest: 90, note: 'par jambe' }),
       G('superset', [I('calf', { reps: 15, load: 20 }), I('sideplank', { time: 30 }, 'par côté')], { rounds: 3, rest: 60 })] },

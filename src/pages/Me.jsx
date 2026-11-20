@@ -25,6 +25,7 @@ export function Me() {
     <Sec title="Entraînement">
       <List>
         <Row icon="cal" color="#5e5ce6" title="Programme jusqu’à la course" sub={next ? next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
+        <Row icon="chart" color="#ff375f" title="Mon niveau" sub="Bilan : temps de course, ateliers, force. Sert de base au plan" href="#/moi/niveau" />
         <Row icon="bolt" color="#bf5af2" title="Bibliothèque de séances" sub="Séances types et mes modèles, à lancer ou planifier" href="#/seance/specifique?lib=1" />
         <Row icon="timer" color="#0a84ff" title="Mes séances" sub="Historique, séances prévues, activités" href="#/seances" />
         <Row icon="leaf" color="#64d2ff" title="Étirements et mobilité" sub="Routines minutées, banque par zone" href="#/moi/etirements" />

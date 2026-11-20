@@ -12,6 +12,7 @@ import { Me, Nutrition, Supplements, Health, Profile, Settings, Import, HealthSy
 import { BugSheet, BugsPage, AnalysesPage } from './pages/Bugs.jsx'
 import { StretchPage } from './pages/Body.jsx'
 import { Program } from './pages/Plan.jsx'
+import { LevelPage } from './pages/Level.jsx'
 import { logError, bugCtx, bugShot } from './lib/bugs.js'
 
 const Ctx = createContext(null)
@@ -124,7 +125,7 @@ export default function App() {
   else if (a === 'seance') page = <SessionPage id={b} tab={c} />
   else if (a === 'comparer') page = <Compare />
   else if (a === 'moi' && !b) page = <Me />
-  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, etirements: <StretchPage /> }[b] || <Me />
+  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
   else page = <Home />
   const tab = '#/' + ({ seance: 'seances', comparer: 'seances' }[a] || a || '')
 

@@ -12,9 +12,8 @@ import { plansOf, upcoming, RACE_TYPE, KIND, activeTeams, partnerOf, isKeeperOnl
 import { normData } from '../lib/session.js'
 import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/custom.js'
 import { useTodayPlan } from './Plan.jsx'
+import { TrainSheet } from './Train.jsx'
 import { todayISO } from '../lib/hyrox.js'
-
-const tomorrow = () => { const d = new Date(Date.now() + 864e5); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10) }
 
 export default function Home() {
   const { profile, races, sessions, teams, loaded } = useApp()
@@ -41,48 +40,43 @@ export default function Home() {
   const demoBar = api.demo ? <div className="note" style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ flex: 1 }}><b>Mode démo</b> : données fictives, gardées dans ce navigateur.</span><button className="btn small" onClick={() => setDemo(false)}>Quitter</button></div> : null
   return <Page title={(hour < 18 ? 'Bonjour ' : 'Bonsoir ') + (profile.display_name || '')}>
     {demoBar}
-    {next ? <a href="#/courses" className="hero glass" style={{ display: 'block', color: 'inherit' }}>
-      <Ring value={1 - Math.min(days, 120) / 120} />
-      <div className="kick">Prochaine course</div>
-      <div className="big num">{days === 0 ? 'Jour J' : days}{days > 0 && <small>{days > 1 ? 'jours' : 'jour'}</small>}</div>
-      <div style={{ fontWeight: 600, fontSize: 19 }}>{next.name}</div>
-      <div className="muted small">{frDate(next.race_date)}{next.city ? ' · ' + next.city : ''} · {RACE_TYPE(next)}</div>
-      <div className="row-gap" style={{ marginTop: 10 }}>{next.goal_seconds && <span className="badge accent">Objectif {fmt(next.goal_seconds)}</span>}{next.team_id && <span className="badge">{teamName(teams, next.team_id)}</span>}</div>
-    </a> : <div className="hero glass"><div className="kick">Aucune course prévue</div><p className="muted">Ajoutez vos prochains Hyrox pour lancer le compte à rebours.</p><a className="btn small" href="#/courses">Ajouter une course</a></div>}
+    {next ? <a href="#/courses" className="glass card" style={{ display: 'flex', alignItems: 'center', gap: 14, color: 'inherit', marginTop: 0 }}>
+      <div style={{ textAlign: 'center', minWidth: 64 }}><div className="num" style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{days === 0 ? 'J' : days}</div><div className="tiny muted">{days === 0 ? 'Jour J' : days > 1 ? 'jours' : 'jour'}</div></div>
+      <div style={{ flex: 1, minWidth: 0 }}><div className="tiny" style={{ color: 'var(--accent)', fontWeight: 700, letterSpacing: '.04em' }}>PROCHAINE COURSE</div>
+        <div style={{ fontWeight: 600, fontSize: 17 }}>{next.name}</div>
+        <div className="muted small">{frDate(next.race_date)}{next.city ? ' · ' + next.city : ''}{next.goal_seconds ? ' · objectif ' + fmt(next.goal_seconds) : ''}</div></div>
+      <Icon name="chev" size={16} className="chev" />
+    </a> : <a href="#/courses" className="glass card" style={{ display: 'block', color: 'inherit', marginTop: 0 }}><b>Aucune course prévue</b><div className="small muted">Ajoutez votre prochain Hyrox pour construire le plan →</div></a>}
 
-    <div className="row-gap" style={{ marginBottom: 6 }}>
-      <button className="btn" onClick={() => setTrain(true)} style={{ flex: 1 }}><Icon name="play" size={18} />S’entraîner</button>
-      <a className="btn glass" href="#/moi/programme" style={{ flex: 1 }}><Icon name="cal" size={18} />Programme</a>
+    <div className="glass card" style={{ borderLeft: '4px solid var(--accent)' }}>
+      <div className="tiny" style={{ color: 'var(--accent)', fontWeight: 700, letterSpacing: '.04em' }}>AUJOURD’HUI{tp ? ' · ' + tp.phase.label.toUpperCase() : ''}</div>
+      {plannedToday.length > 0 ? <>
+        <div style={{ fontWeight: 700, fontSize: 19, margin: '2px 0' }}>{plannedToday[0].name}</div><div className="small muted">Séance prévue aujourd’hui</div>
+        <div className="row-gap" style={{ marginTop: 10 }}><a className="btn" style={{ flex: 2 }} href={'#/seance/' + plannedToday[0].id + '/chrono'}><Icon name="play" size={18} />Lancer</a><button className="btn glass" style={{ flex: 1 }} onClick={() => setTrain(true)}>Autre</button></div>
+      </> : tp ? <>
+        <div style={{ fontWeight: 700, fontSize: 19, margin: '2px 0', textDecoration: tp.done && tp.d.key !== 'repos' ? 'line-through' : 'none' }}>{tp.d.title}</div>
+        <div className="small muted">{tp.done && tp.d.key !== 'repos' ? '✓ Séance validée. Pensez à la récupération.' : tp.d.detail}</div>
+        <div className="row-gap" style={{ marginTop: 10 }}>
+          {tp.d.key === 'repos' || tp.done ? <a className="btn" style={{ flex: 2 }} href="#/moi/etirements"><Icon name="leaf" size={18} />Étirements</a>
+            : <a className="btn" style={{ flex: 2 }} href="#/moi/programme"><Icon name="play" size={18} />Préparer la séance</a>}
+          <button className="btn glass" style={{ flex: 1 }} onClick={() => setTrain(true)}>Autre</button></div>
+      </> : <>
+        <div style={{ fontWeight: 700, fontSize: 19, margin: '2px 0' }}>{today.d.title}</div><div className="small muted">{today.d.detail}</div>
+        <div className="row-gap" style={{ marginTop: 10 }}><a className="btn" style={{ flex: 2 }} href="#/moi/programme"><Icon name="cal" size={18} />Créer mon plan</a><button className="btn glass" style={{ flex: 1 }} onClick={() => setTrain(true)}>S’entraîner</button></div>
+      </>}
     </div>
 
-    <div className="row-gap" style={{ gap: 6, marginBottom: 6 }}>
-      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a>
-      <button className="btn glass small" style={{ flex: 1 }} onClick={() => setQuick(true)}><Icon name="plus" size={14} />Activité</button>
-      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/etirements"><Icon name="leaf" size={14} />Étirer</a>
-      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/nutrition"><Icon name="leaf" size={14} />Manger</a>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, margin: '4px 0 6px' }}>
+      {[['spark', 'Forme', '#30d158', '#/moi/sante?t=forme'], ['plus', 'Activité', '#ff9f0a', null], ['leaf', 'Étirer', '#64d2ff', '#/moi/etirements'], ['heart', 'Nutrition', '#ff375f', '#/moi/nutrition']].map(([ic, l, c, h]) => {
+        const inner = <><span style={{ width: 36, height: 36, borderRadius: 11, background: c, color: '#fff', display: 'grid', placeItems: 'center' }}><Icon name={ic} size={19} /></span><span className="tiny" style={{ fontWeight: 600 }}>{l}</span></>
+        const st = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 4px', borderRadius: 16, color: 'inherit', border: 0, font: 'inherit' }
+        return h ? <a key={l} className="glass" style={st} href={h}>{inner}</a> : <button key={l} className="glass" style={st} onClick={() => setQuick(true)}>{inner}</button>
+      })}
     </div>
-    {train && <Sheet title="S’entraîner" onClose={() => setTrain(false)}>
-      <List>
-        {plannedToday.map(s => <Row key={s.id} icon="play" color="#30d158" title={'Lancer « ' + s.name + ' »'} sub="Séance prévue aujourd’hui" href={'#/seance/' + s.id + '/chrono'} />)}
-        {tp && tp.d.key !== 'repos' && !tp.done && <Row icon="cal" color="#5e5ce6" title={'Séance du plan : ' + tp.d.title} sub="Préparer et lancer depuis le programme" href="#/moi/programme" />}
-        <Row icon="bolt" color="#bf5af2" title="Séance personnalisée" sub="Renfo, circuits, EMOM, course… à composer" href="#/seance/specifique" />
-        <Row icon="cal" color="#bf5af2" title="Bibliothèque de séances" sub="Séances types et mes modèles" href="#/seance/specifique?lib=1" />
-        <Row icon="timer" color="#0a84ff" title="Format Hyrox" sub="Simulation ou entraînement avec les 8 ateliers, relais en duo" href="#/seance/nouvelle" />
-      </List>
-      <List>
-        <Row icon="plus" color="#ff9f0a" title="Ajouter une activité déjà faite" sub="Footing, vélo, match, renfo à la salle…" onClick={() => { setTrain(false); setQuick(true) }} />
-        <Row icon="cal" color="#8e8e93" title="Planifier une séance" sub="La pré-enregistrer pour un autre jour" href={'#/seance/specifique?date=' + tomorrow()} />
-        <Row icon="timer" color="#30d158" title="Pointer un athlète" sub="Enregistrer les temps de quelqu’un" href="#/seances" />
-      </List>
-    </Sheet>}
+    {train && <TrainSheet tp={tp} onClose={() => setTrain(false)} />}
     {quick && <QuickSheet onClose={() => setQuick(false)} />}
     {toKeep.length > 0 && <Sec title="À pointer"><List>{toKeep.map(s => <Row key={s.id} icon="timer" color="#30d158" title={'Pointer ' + (athleteNames(s) || s.name)} sub={s.name} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
-    <Sec title={'Aujourd’hui · ' + (tp ? tp.phase.label : today.p.phase.label)}>
-      <List>{plannedToday.map(s => <Row key={s.id} icon="play" color="#30d158" title={'Séance prévue : ' + s.name} sub="Pré-enregistrée pour aujourd’hui" value="Lancer" href={'#/seance/' + s.id + '/chrono'} />)}
-        {tp ? <Row icon="bolt" color="#5e5ce6" title={(tp.done && tp.d.key !== 'repos' ? '✓ ' : '') + tp.d.title} sub={tp.d.detail} value={tp.d.zone} href="#/moi/programme" />
-          : <Row icon="bolt" color="#5e5ce6" title={today.d.title} sub={today.d.detail + ' · créez votre plan jusqu’à la course'} value={today.d.zone} href="#/moi/programme" />}
-        {profile.consent_health && <Row icon="moon" color="#5856d6" title={lastNight && lastNight.day >= new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? 'Sommeil : ' + fmtH(lastNight.data.asleep) : 'Noter ma nuit'} sub={sst ? 'Moyenne 7 nuits ' + fmtH(sst.avg) + (sst.debt > 300 ? ' · dette ' + fmtH(sst.debt) : '') : 'Suivi du sommeil'} href="#/moi/sante?t=sommeil" />}</List>
-    </Sec>
+    {profile.consent_health && <List><Row icon="moon" color="#5856d6" title={lastNight && lastNight.day >= new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? 'Sommeil : ' + fmtH(lastNight.data.asleep) : 'Noter ma nuit'} sub={sst ? 'Moyenne 7 nuits ' + fmtH(sst.avg) + (sst.debt > 300 ? ' · dette ' + fmtH(sst.debt) : '') : 'Suivi du sommeil'} href="#/moi/sante?t=sommeil" /></List>}
 
     {ups.length > 1 && <Sec title="Mes prochains Hyrox">
       <List>{ups.slice(1, 6).map(r => <Row key={r.id} icon="flag" color={r.priority === 'A' ? '#ff375f' : r.format === 'duo' ? '#ff9f0a' : '#0a84ff'} title={r.name} sub={`${frDate(r.race_date)} · ${RACE_TYPE(r)}${r.team_id ? ' · ' + (teamName(teams, r.team_id) || '') : ''}${main && r.id === main.id ? ' · objectif principal' : ''}`} value={'J−' + daysUntil(r.race_date)} href="#/courses" />)}</List>

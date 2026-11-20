@@ -277,7 +277,7 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
   </div>
   return <>
     <div className="glass card">
-      <div className="clock num">{fmt(t / 1000)}</div>
+      <div className="clock num">{fmt(finished ? customSummary(s).total : t / 1000)}</div>
       <div className="progress"><i style={{ width: ((cur < 0 ? steps.length : cur) / steps.length * 100) + '%' }} /></div>
       {st ? <>
         {st.grp && <div className="badge accent" style={{ marginBottom: 4 }}>{st.grp.label}{st.auto || st.autoStart ? ' · enchaînement automatique' : ''}</div>}

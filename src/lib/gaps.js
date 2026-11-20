@@ -57,3 +57,18 @@ export function duoAdjust(myGaps, partnerGaps, share = {}, names = {}) {
   if (partnerGaps.some(g => g.kind === 'run')) notes.push(`Courses à deux : l’allure est celle du plus lent. Faites des sorties communes à l’allure de ${names.partner || 'votre partenaire'} et gardez vos intervalles rapides en solo.`)
   return { carry, both, focus: [...both, ...carry], notes }
 }
+
+/**
+ * Bilan de niveau déclaré (journal « level ») : complète les données des séances quand elles manquent.
+ * level.data : {exp, run:{k1, k5}, st:{id: s pour l'atelier complet}, rm:{squat:{load, reps}…}, pdc:{pullup, pushup}, hyrox:{best}}
+ * Renvoie {stats, e1rm, src} : les séances priment ; le bilan remplit les trous.
+ */
+export function withLevel(stats, e1rmIn = {}, level) {
+  const L = (level && level.data) || {}, st = { ...((stats && stats.st) || {}) }, src = {}
+  Object.entries(L.st || {}).forEach(([id, v]) => { if (v && !st[id]) { st[id] = +v; src[id] = 'bilan' } })
+  let pace = stats && stats.pace
+  if (!pace && L.run) { if (L.run.k5) pace = L.run.k5 / 5 * 1.1; else if (L.run.k1) pace = L.run.k1 * 1.25; if (pace) src.run = 'bilan' }
+  const e1rm = { ...e1rmIn }
+  Object.entries(L.rm || {}).forEach(([k, x]) => { const v = x && x.load ? x.load * (1 + Math.min(+x.reps || 1, 12) / 30) : null; if (v && !(e1rm[k] >= v)) { e1rm[k] = v; src[k] = 'bilan' } })
+  return { stats: { ...(stats || {}), st, pace }, e1rm, src }
+}

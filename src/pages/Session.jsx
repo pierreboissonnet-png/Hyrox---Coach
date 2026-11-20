@@ -19,7 +19,7 @@ import { logError } from '../lib/bugs.js'
 
 const TABS = [['chrono', 'Chrono'], ['temps', 'Temps'], ['cardio', 'Cardio'], ['stats', 'Stats'], ['coach', 'Coach']]
 
-export default function SessionPage({ id, tab = 'chrono' }) {
+export default function SessionPage({ id, tab: tab0 }) {
   const app = useApp()
   const { sessions, teams, profile, reload } = app
   const toast = useToast()
@@ -49,6 +49,9 @@ export default function SessionPage({ id, tab = 'chrono' }) {
   function undo() { const prev = hist.current.pop(); if (prev) { setS({ ...s, data: prev }); api.sessions.save({ id: s.id, data: prev }) } }
   const ctx = { s, d, plan, team, duo, who, commit, patch, undo, canUndo: hist.current.length > 0, keeperOnly }
   const custom = isCustom(s)
+  // Séance terminée : on ouvre l'analyse plutôt que le chrono
+  const finished = custom ? customSummary(s).complete : d && d.cp && d.cp[d.cp.length - 1] != null
+  const tab = tab0 || (finished ? (keeperOnly ? 'temps' : 'stats') : 'chrono')
   const T = custom ? [['chrono', 'Chrono'], ['temps', 'Réalisé'], ['cardio', 'Cardio'], ['stats', 'Analyse'], ['coach', 'Coach']] : TABS
   const tabs = keeperOnly ? T.filter(([k]) => k === 'chrono' || k === 'temps') : T
   const go = t => { window.__hxReplace = true; location.replace('#/seance/' + id + '/' + t) }

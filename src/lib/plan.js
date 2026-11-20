@@ -123,25 +123,88 @@ export function generateWeeks(o) {
     if (deload) keys = keys.map(x => x === 'simu' ? 'ateliers' : x)
     const focus = [0, 1, 2].map(j => pool[(w * 2 + j) % pool.length]).filter((v, i, a) => a.indexOf(v) === i)
     const duoKey = duo ? ['simu', 'compromis', 'ateliers'].find(x => keys.includes(x)) : null
-    const slots = SLOTS[perWeek]
+    const placed = placeKeys(keys, perWeek, o.template)
     const days = DAYS.map((label, i) => {
-      const j = slots.indexOf(i), key = j >= 0 ? keys[j] : 'repos', date = addDays(ws, i)
+      const pk = placed[i], key = pk.key, date = addDays(ws, i)
+      if (key === 'coach') { const t = pk.coach, cl = (COACH_ACTS.find(a => a[0] === t.act) || [0, 'Cours'])[1]
+        return { date, day: label, key, title: (t.label || cl) + ' (avec coach)', detail: 'Séance encadrée par votre coach' + (pk.replaces ? ` : elle remplace « ${describe(pk.replaces, { phase: ph.id, factor })[0]} » du plan.` : '.') + ' Cochez « Fait » une fois terminée.', zone: COACH_ZONE[t.intensity] || 'Z3', min: +t.min || 60, focus: [], duo: false, blocks: null, coach: { act: t.act, intensity: t.intensity || 'modere' }, fixed: true } }
       const isDuo = !!duoKey && key === duoKey
       const ctx = { focus: isDuo ? [...new Set([...(duo.focus || []), ...focus])] : focus, e1rm: o.e1rm, phase: ph.id, factor, pace: o.pace, duo: isDuo, partner: duo && duo.partner }
       let min = r5(BASE_MIN[key] * (key === 'repos' ? 1 : factor) + (engineGap && key === 'z2' ? 10 : 0))
       ctx.min = min
       const [title, detail] = describe(key, ctx)
-      return { date, day: label, key, title, detail, zone: ZONE[key], min, focus: ctx.focus.slice(0, 3), duo: isDuo, blocks: blocksFor(key, ctx) }
+      return { date, day: label, key, title: pk.renfo ? title + ' (renfo sans coach)' : title, detail: pk.renfo ? 'Votre créneau de renfo libre, rempli selon vos lacunes. ' + detail : detail, zone: ZONE[key], min, focus: ctx.focus.slice(0, 3), duo: isDuo, blocks: blocksFor(key, ctx), ...(pk.fixed ? { fixed: true } : {}) }
     })
     weeks.push({ start: ws, phase: { id: ph.id, label: ph.label, note: ph.note }, factor, deload, focus, days })
   }
   return weeks
 }
 
+/** Lacunes principales (sans la mention « données insuffisantes ») : sert à détecter un changement */
+export const gapLabels = gaps => (gaps || []).filter(g => g.kind !== 'test').slice(0, 4).map(g => g.label)
+
+// --------------------------------------------------------------- semaine type
+// template[i] (lundi = 0) : {type: 'free' | 'coach' | 'renfo' | 'rest', act, label, min, intensity: 'facile' | 'modere' | 'intense'}
+export const COACH_ACTS = [['spinning', 'Spinning / RPM'], ['crosstraining', 'Cross-training / circuit'], ['renfo', 'Renforcement / body pump'], ['course', 'Course en club'], ['natation', 'Natation'], ['hyrox', 'Cours Hyrox'], ['yoga', 'Yoga / pilates'], ['autre', 'Autre cours']]
+const COACH_KEY = { spinning: ['z2', 'seuil'], crosstraining: ['compromis', 'ateliers', 'force'], renfo: ['force'], course: ['seuil', 'z2', 'allure'], natation: ['z2'], hyrox: ['compromis', 'ateliers', 'simu'], yoga: [], autre: [] }
+const COACH_ZONE = { facile: 'Z2', modere: 'Z3', intense: 'Z4' }
+/** Répartit les séances du plan autour de la semaine type. Renvoie [{i, key, coach?}] pour les 7 jours */
+export function placeKeys(keys, perWeek, template) {
+  if (!template || !template.some(t => t && t.type && t.type !== 'free')) { const sl = SLOTS[perWeek]; return [0, 1, 2, 3, 4, 5, 6].map(i => ({ i, key: sl.indexOf(i) >= 0 ? keys[sl.indexOf(i)] : 'repos' })) }
+  const left = [...keys], out = Array(7).fill(null)
+  // 1. cours avec coach : ils remplacent la séance du plan la plus proche
+  template.forEach((t, i) => {
+    if (!t || t.type !== 'coach') return
+    const want = t.intensity === 'intense' ? [...(COACH_KEY[t.act] || [])].reverse() : COACH_KEY[t.act] || []
+    const k = want.find(x => left.includes(x)); if (k) left.splice(left.indexOf(k), 1)
+    out[i] = { i, key: 'coach', coach: t, replaces: k || null }
+  })
+  template.forEach((t, i) => { if (t && t.type === 'rest') out[i] = { i, key: 'repos', fixed: true } })
+  // 2. renfo sans coach : la séance de force (sinon ateliers) du plan s'y place, avec un contenu ciblé
+  template.forEach((t, i) => { if (!t || t.type !== 'renfo' || out[i]) return; const k = ['force', 'ateliers', 'compromis'].find(x => left.includes(x)); if (k) left.splice(left.indexOf(k), 1); out[i] = { i, key: k || 'force', renfo: true } })
+  // 3. le reste sur les jours libres, en espaçant (préférence aux créneaux habituels)
+  const free = [0, 1, 2, 3, 4, 5, 6].filter(i => !out[i]), pref = [...SLOTS[6], 6]
+  const order = [...free].sort((a, b) => pref.indexOf(a) - pref.indexOf(b))
+  const hard = i => !!out[i] && (INTENSE.includes(out[i].key) || (out[i].coach && out[i].coach.intensity === 'intense'))
+  left.forEach(k => {
+    const i = order.find(d => !out[d] && !(INTENSE.includes(k) && (hard(d - 1) || hard(d + 1)))) ?? order.find(d => !out[d])
+    if (i != null) out[i] = { i, key: k }
+  })
+  return out.map((x, i) => x || { i, key: 'repos' })
+}
+
+/**
+ * Séances de course à ajouter à la semaine en cours, d'après ce qui a été fait.
+ * o : {week, doneOn, today, gaps, pace} → [{key, title, detail, min, zone, blocks}]
+ */
+export function runSuggestions(o) {
+  const { week, doneOn, today } = o
+  const freeDays = week.days.filter(d => d.key === 'repos' && d.date >= today && !d.fixed)
+  if (!freeDays.length) return { days: [], list: [] }
+  const work = week.days.filter(d => d.key !== 'repos' && d.date < today), done = work.filter(d => doneOn(d.date)).length
+  const ratio = work.length ? done / work.length : 1
+  const runGap = (o.gaps || []).some(g => g.kind === 'run'), engine = (o.gaps || []).some(g => g.kind === 'engine')
+  const hasRun = week.days.filter(d => ['z2', 'seuil', 'allure'].includes(d.key)).length
+  const pace = o.pace || 330, L = []
+  if (ratio < 0.6) L.push({ key: 'z2', title: 'Footing de reprise', min: 30, zone: 'Z2', detail: 'Séances manquées cette semaine : 30 min faciles plutôt que de tout rattraper.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }] })
+  else {
+    if (runGap) L.push({ key: 'seuil', title: 'Fractionné court', min: 40, zone: 'Z4', detail: `8 × 400 m à ${Math.floor(pace * 0.92 / 60)}:${String(Math.round(pace * 0.92 % 60)).padStart(2, '0')}/km, récup 1 min : la course est votre point à travailler.`, blocks: [{ ex: 'run', name: '', sets: 1, rest: 60, w: 'A', target: { time: 600 }, note: 'échauffement' }, { ex: 'run', name: '', sets: 8, rest: 60, w: 'A', target: { meters: 400, time: Math.round(pace * 0.92 * 0.4) }, note: '' }] })
+    if (engine || hasRun < 2) L.push({ key: 'z2', title: 'Footing zone 2', min: 40, zone: 'Z2', detail: '40 min faciles : la base aérobie qui fait tenir les 8 km de course.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 2400 }, note: 'zone 2' }] })
+    if (ratio >= 0.9) L.push({ key: 'z2', title: 'Sortie longue facile', min: 60, zone: 'Z2', detail: 'Semaine bien suivie : 50 à 60 min faciles en bonus.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 3300 }, note: 'zone 2, terrain plat' }] })
+    if (!L.length) L.push({ key: 'z2', title: 'Footing récupération', min: 30, zone: 'Z1–Z2', detail: '30 min très faciles, utile le lendemain d’une séance dure.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }] })
+  }
+  return { days: freeDays, list: L.slice(0, 2), ratio }
+}
+/** Ajoute une séance proposée à un jour libre de la semaine */
+export function addToWeek(plan, weekStart, date, s) {
+  return { ...plan, weeks: plan.weeks.map(w => w.start !== weekStart ? w : { ...w, days: w.days.map(d => d.date !== date ? d : { ...d, key: s.key, title: s.title, detail: s.detail, zone: s.zone, min: s.min, blocks: s.blocks, added: true }) }),
+    log: [...(plan.log || []), { date, text: `Ajout : ${s.title} le ${date.split('-').reverse().slice(0, 2).join('/')}` }].slice(-20) }
+}
+
 /** Nouveau plan complet */
 export function createPlan(o) {
   return { v: 1, created: o.from, raceId: o.race ? o.race.id : null, raceDate: o.race ? o.race.race_date : null, raceName: o.race ? o.race.name : null, format: o.race ? o.race.format : 'solo',
-    perWeek: o.perWeek, level: 0, gapsAt: (o.gaps || []).slice(0, 4).map(g => g.label), weeks: generateWeeks(o), log: [{ date: o.from, text: 'Plan créé' + (o.race ? ' jusqu’à ' + o.race.name : '') + '.' }] }
+    perWeek: o.perWeek, level: 0, gapsAt: gapLabels(o.gaps), template: o.template || null, weeks: generateWeeks(o), log: [{ date: o.from, text: 'Plan créé' + (o.race ? ' jusqu’à ' + o.race.name : '') + '.' }] }
 }
 /** Recalcule à partir de la semaine en cours en gardant l'historique des semaines passées */
 export function replan(prev, o, why) {
@@ -152,7 +215,7 @@ export function replan(prev, o, why) {
   const cur = (prev.weeks || []).find(w => w.start === mon)
   if (cur && fresh[0]) fresh[0] = { ...fresh[0], days: fresh[0].days.map((d, i) => d.date < o.from ? cur.days[i] || d : d) }
   return { ...prev, raceId: o.race ? o.race.id : null, raceDate: o.race ? o.race.race_date : null, raceName: o.race ? o.race.name : null, format: o.race ? o.race.format : 'solo',
-    perWeek: o.perWeek, level, gapsAt: (o.gaps || []).slice(0, 4).map(g => g.label), weeks: [...past, ...fresh], log: [...(prev.log || []), { date: o.from, text: why }].slice(-20) }
+    perWeek: o.perWeek, level, gapsAt: gapLabels(o.gaps), template: o.template || null, weeks: [...past, ...fresh], log: [...(prev.log || []), { date: o.from, text: why }].slice(-20) }
 }
 
 /**

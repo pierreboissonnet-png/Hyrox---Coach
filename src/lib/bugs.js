@@ -1,6 +1,6 @@
 // Signalements de bugs (même principe que l'appli Quiz CI BSPP) :
 // capture de l'écran au moment du clic, contexte technique, erreurs JavaScript et dernières actions.
-export const APP_VERSION = '1.3.0'
+export const APP_VERSION = '1.4.0'
 const errs = [], trail = []
 const push = (arr, max, item) => { arr.push(item); if (arr.length > max) arr.shift() }
 const hhmmss = () => new Date().toLocaleTimeString('fr-FR')
