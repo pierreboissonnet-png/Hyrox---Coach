@@ -90,7 +90,11 @@ const supaApi = {
   },
   bugs: {
     // Liste sans les captures (chargées à l'ouverture d'un signalement)
-    list: async () => ok(await sb.from('bug_reports').select('id,no,user_id,pseudo,text,ctx,has_img,status,note,analysis,updated_by,created_at,updated_at').order('no', { ascending: false })),
+    list: async () => { const r = await sb.from('bug_reports').select('id,no,user_id,pseudo,text,ctx,has_img,status,note,analysis,updated_by,created_at,updated_at,bug_comments(count)').order('no', { ascending: false })
+      if (r.error && /bug_comments/.test(r.error.message)) return ok(await sb.from('bug_reports').select('id,no,user_id,pseudo,text,ctx,has_img,status,note,analysis,updated_by,created_at,updated_at').order('no', { ascending: false }))   // table pas encore créée
+      return ok(r).map(b => ({ ...b, n_comments: (b.bug_comments && b.bug_comments[0] && b.bug_comments[0].count) || 0 })) },
+    comments: async id => ok(await sb.from('bug_comments').select('*').eq('bug_id', id).order('created_at')),
+    comment: async (id, text, pseudo, fromAdmin, img) => ok(await sb.from('bug_comments').insert({ bug_id: id, text, pseudo, from_admin: !!fromAdmin, img: img || null }).select().single()),
     get: async id => ok(await sb.from('bug_reports').select('*').eq('id', id).single()),
     add: async b => ok(await sb.from('bug_reports').insert(b).select('id,no').single()),
     update: async (id, patch, by) => ok(await sb.from('bug_reports').update({ ...patch, updated_by: by || '', updated_at: new Date().toISOString() }).eq('id', id).select('id,no,user_id,pseudo,text,ctx,has_img,status,note,analysis,updated_by,created_at,updated_at').single()),

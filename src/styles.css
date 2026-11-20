@@ -211,3 +211,10 @@ input[type=range] { width: 100%; accent-color: var(--accent) }
 .stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)) }
 .stats.three .stat .v { font-size: 19px }
 .stats.three .stat .d { font-size: 11px }
+
+/* Champs modifiables bien visibles (signalement 17) : fond, coins arrondis, flèche sur les menus déroulants */
+.row input:not([type=checkbox]):not([type=range]):not([type=search]), .row select { background-color: var(--fill); border-radius: 9px; padding: 7px 10px; color: var(--ink); font-size: 16px; border: 1px solid rgba(120,120,128,.25) }
+.row select { padding-right: 26px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center }
+.row textarea { background: var(--fill); border-radius: 10px; padding: 8px 10px; border: 1px solid rgba(120,120,128,.25); font-size: 16px; box-sizing: border-box }
+.row input:focus, .row select:focus, .row textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px }
+.row.indent { padding-left: 28px }

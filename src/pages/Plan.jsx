@@ -124,7 +124,7 @@ export function Program() {
     } catch (e) { toast('Enregistrement impossible : ' + e.message) }
   }
   const tplSheet = tplOpen && <TemplateSheet value={P.template} onClose={() => setTplOpen(false)} onSave={saveTemplate} />
-  const tplRow = <List><Row icon="cal" color="#ff9f0a" title="Ma semaine type" sub={P.template && P.template.some(t => t.type !== 'free') ? P.template.map((t, i) => t.type === 'coach' ? DAYS[i].slice(0, 3) + ' : ' + (t.label || (COACH_ACTS.find(a => a[0] === t.act) || [0, 'cours'])[1]) : t.type === 'renfo' ? DAYS[i].slice(0, 3) + ' : renfo libre' : t.type === 'rest' ? DAYS[i].slice(0, 3) + ' : repos' : null).filter(Boolean).join(' · ') : 'Cours avec coach, créneaux de renfo, jours de repos imposés'} onClick={() => setTplOpen(true)} /></List>
+  const tplRow = <List><Row icon="cal" color="#ff9f0a" title="Ma semaine type" sub={P.template && P.template.some(t => t.type !== 'free' || t.second) ? P.template.map((t, i) => { const one = x => x.type === 'coach' ? (x.label || (COACH_ACTS.find(a => a[0] === x.act) || [0, 'cours'])[1]) : x.type === 'renfo' ? 'renfo libre' : x.type === 'rest' ? 'repos' : null; const L = [one(t), t.second && one(t.second)].filter(Boolean); return L.length ? DAYS[i].slice(0, 3) + ' : ' + L.join(' + ') : null }).filter(Boolean).join(' · ') : 'Cours avec coach, créneaux de renfo, jours de repos imposés'} onClick={() => setTplOpen(true)} /></List>
 
   if (!plan) return <Page back="#/moi" title="Programme" subtitle={race ? `${race.name} · J−${daysUntil(race.race_date)}` : 'Sans course planifiée'}>
     <div className="glass card">
@@ -165,7 +165,8 @@ export function Program() {
   })
   const W = weekDone(week, doneOn, today)
   const manualIdx = ((P.doneJ.data || []).find(e => e.day === week.start) || { data: { done: [] } }).data.done || []
-  async function toggle(i, d) {
+  async function toggle(_, d) {
+    const i = (new Date(d.date + 'T12:00:00').getDay() + 6) % 7   // case cochée = le jour (même avec deux séances)
     if (byDate[d.date]) return
     const row = (P.doneJ.data || []).find(e => e.day === week.start)
     const next = manualIdx.includes(i) ? manualIdx.filter(x => x !== i) : [...manualIdx, i].sort()
@@ -219,7 +220,7 @@ export function Program() {
       {adapted.notes.length > 1 && <button className="btn plain small" onClick={() => setNotesOpen(o => !o)}>{notesOpen ? 'Masquer' : 'Voir'} les {adapted.notes.length - 1} adaptation(s) de la semaine</button>}
       {notesOpen && adapted.notes.slice(1).map((n, i) => <div className="tip" key={i}><span className="dot bad" /><span className="small">{n}</span></div>)}
     </div>}
-    <List>{days.map((d, i) => { const done = doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date} style={isToday ? { background: 'var(--accent-soft)' } : null}>
+    <List>{days.map((d, i) => { const done = doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date + '-' + (d.slot || 1)} style={isToday ? { background: 'var(--accent-soft)' } : null}>
       <div className="row-gap"><b>{d.day}</b><span className="small muted">{frDate(d.date).slice(0, 5)}</span>{isToday && <span className="badge accent">Aujourd’hui</span>}{d.duo && <span className="badge">duo</span>}{d.key === 'coach' && <span className="badge" style={{ background: '#ff9f0a33' }}>coach</span>}{d.added && <span className="badge">ajoutée</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
         {d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là' : 'Cocher quand la séance est faite'}>
           <input type="checkbox" checked={done} disabled={auto} onChange={() => toggle(i, d)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
@@ -286,6 +287,13 @@ export function useTodayPlan() {
 }
 
 /** Semaine type : cours avec coach (fixes), créneaux de renfo libre, repos imposés */
+const fs = { background: 'var(--fill)', border: 0, borderRadius: 8, padding: '6px 8px', font: 'inherit', color: 'var(--ink)', width: '100%', boxSizing: 'border-box', textAlign: 'left' }
+const CoachFields = ({ t, set }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }} className="small">
+  <label>Cours<select style={fs} value={t.act} onChange={e => set({ act: e.target.value })}>{COACH_ACTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+  <label>Intensité<select style={fs} value={t.intensity} onChange={e => set({ intensity: e.target.value })}><option value="facile">Facile</option><option value="modere">Modérée</option><option value="intense">Intense</option></select></label>
+  <label>Durée (min)<input style={fs} inputMode="numeric" value={t.min} onChange={e => set({ min: e.target.value })} /></label>
+  <label>Nom (facultatif)<input style={fs} value={t.label || ''} onChange={e => set({ label: e.target.value })} placeholder="RPM du lundi" /></label>
+</div>
 const DAY_TYPES_T = [['free', 'Libre'], ['coach', 'Cours avec coach'], ['renfo', 'Renfo sans coach'], ['rest', 'Repos']]
 function TemplateSheet({ value, onClose, onSave }) {
   const [T, setT] = useState(() => DAYS.map((_, i) => ({ type: 'free', act: 'spinning', intensity: 'modere', min: 45, label: '', ...((value && value[i]) || {}) })))
@@ -294,12 +302,12 @@ function TemplateSheet({ value, onClose, onSave }) {
     <p className="small muted" style={{ marginTop: 0 }}>Indiquez vos rendez-vous fixes. Les cours avec coach ne sont pas modifiés : le plan les compte et place ses séances autour. Les créneaux « renfo sans coach » reçoivent une séance ciblée sur vos lacunes.</p>
     <List>{DAYS.map((d, i) => { const t = T[i]; return <div className="row stack" key={d}>
       <div className="row-gap"><b style={{ width: 84 }}>{d}</b><select value={t.type} onChange={e => set(i, { type: e.target.value })} style={{ flex: 1 }} aria-label={'Type de ' + d}>{DAY_TYPES_T.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
-      {t.type === 'coach' && <div className="row-gap small" style={{ flexWrap: 'wrap', gap: 6 }}>
-        <select value={t.act} onChange={e => set(i, { act: e.target.value })} aria-label="Cours">{COACH_ACTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <select value={t.intensity} onChange={e => set(i, { intensity: e.target.value })} aria-label="Intensité"><option value="facile">facile</option><option value="modere">modéré</option><option value="intense">intense</option></select>
-        <input inputMode="numeric" value={t.min} onChange={e => set(i, { min: e.target.value })} style={{ width: 48 }} aria-label="Durée en minutes" /><span>min</span>
-        <input value={t.label} onChange={e => set(i, { label: e.target.value })} placeholder="Nom (facultatif)" style={{ flex: 1, minWidth: 120 }} aria-label="Nom du cours" />
-      </div>}
+      {t.type === 'coach' && <CoachFields t={t} set={p => set(i, p)} />}
+      {t.second ? <div style={{ paddingLeft: 12, borderLeft: '2px solid var(--accent)', marginTop: 4 }}>
+        <div className="row-gap small"><span style={{ width: 72 }}>2e séance</span><select value={t.second.type} onChange={e => set(i, { second: { ...t.second, type: e.target.value } })} style={{ flex: 1 }} aria-label={'2e séance du ' + d}><option value="coach">Cours avec coach</option><option value="renfo">Renfo sans coach</option></select>
+          <button className="icon-btn" aria-label="Retirer la 2e séance" onClick={() => set(i, { second: null })} style={{ width: 30, height: 30 }}><Icon name="close" size={14} /></button></div>
+        {t.second.type === 'coach' && <CoachFields t={t.second} set={p => set(i, { second: { ...t.second, ...p } })} />}
+      </div> : t.type !== 'rest' && <button className="btn plain small" style={{ alignSelf: 'flex-start', padding: '2px 0' }} onClick={() => set(i, { second: { type: 'renfo', act: 'renfo', intensity: 'modere', min: 45, label: '' } })}>+ 2e séance ce jour-là</button>}
     </div> })}</List>
   </Sheet>
 }

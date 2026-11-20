@@ -16,7 +16,7 @@ import { activeTeams, KIND } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 import { KeeperPicker } from './Sessions.jsx'
 
-const inp = { background: 'var(--glass)', borderRadius: 8, padding: '6px 8px', border: 0, minWidth: 0, textAlign: 'left' }
+const inp = { background: 'var(--fill)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(120,120,128,.35)', minWidth: 0, width: '100%', textAlign: 'left', fontSize: 16, color: 'var(--ink)', boxSizing: 'border-box' }
 const pct = a => a == null ? '—' : Math.round(a * 100) + ' %'
 
 // ---------------------------------------------------------------- création
@@ -28,22 +28,22 @@ function TargetFields({ ex, target, onChange, hide = [], strength }) {
   const base = (e.m || ['time', 'reps']).filter(k => k !== 'rounds')
   const [extra, setExtra] = useState(() => Object.keys(target || {}).filter(k => target[k] != null && !base.includes(k) && METRICS[k]))
   const keys = [...new Set([...base, ...extra])].filter(k => !hide.includes(k))
-  const others = ['time', 'meters', 'reps', 'load', 'cal'].filter(k => !keys.includes(k) && !hide.includes(k))
+  const others = ['time', 'meters', 'reps', 'load', 'cal', 'res'].filter(k => !keys.includes(k) && !hide.includes(k))
   const cols = keys.length + (strength ? 1 : 0)
   const [help, setHelp] = useState(false)
   return <div>
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, cols)}, 1fr)`, gap: 6 }}>
-      {keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {keys.map(k => <label key={k} className="small muted" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {METRICS[k][0]}{e.uni && (k === 'reps' || k === 'time') ? ' / côté' : ''} <span className="faint">({METRICS[k][1]})</span>
         <input style={inp} {...(k === 'time' ? TIME : { inputMode: 'decimal', placeholder: '—' })} defaultValue={fmtVal(k, target[k])}
           onBlur={ev => { const n = readVal(k, ev.target.value); if (n !== undefined) onChange({ ...target, [k]: n }) }} />
       </label>)}
-      {strength && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {strength && <label className="small muted" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <span>Reps en réserve <button type="button" className="link" aria-label="Qu’est-ce que les reps en réserve ?" onClick={ev => { ev.preventDefault(); setHelp(h => !h) }} style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontSize: 13 }}>ⓘ</button></span>
         <input style={inp} inputMode="numeric" placeholder="ex. 2" defaultValue={target.rir ?? ''} onBlur={ev => { const n = readVal('rir', ev.target.value); if (n !== undefined) onChange({ ...target, rir: n }) }} /></label>}
     </div>
     {help && <div className="note small" style={{ margin: '6px 0 0' }}><b>Reps en réserve (RIR)</b> : combien de répétitions vous auriez encore pu faire en fin de série. 8 reps avec 2 en réserve = une charge avec laquelle vous pourriez en faire 10. <b>0</b> = jusqu’à l’échec · <b>1–2</b> = dur mais propre, idéal pour progresser · <b>3–4</b> = confortable (semaine chargée, technique). Pour l’Hyrox, visez 1 à 3. Facultatif.</div>}
-    {others.length > 0 && <div className="row-gap tiny" style={{ marginTop: 4, gap: 4 }}><span className="faint">+ mesure :</span>{others.map(k => <button key={k} className="link" style={{ fontSize: 12, padding: '0 4px', minHeight: 0, background: 'none', border: 0, color: 'var(--accent)' }} onClick={() => setExtra(x => [...x, k])}>{METRICS[k][0].toLowerCase()}</button>)}</div>}
+    {others.length > 0 && <div className="row-gap tiny" style={{ marginTop: 4, gap: 4 }}><span className="faint">+ mesure :</span>{others.map(k => <button key={k} className="link" style={{ fontSize: 14, padding: '2px 6px', minHeight: 0, background: 'none', border: 0, color: 'var(--accent)' }} onClick={() => setExtra(x => [...x, k])}>{METRICS[k][0].toLowerCase()}</button>)}</div>}
   </div>
 }
 const norm = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
@@ -59,17 +59,21 @@ function ExSelect({ value, name, onChange, style }) {
   </>
 }
 function ExSheet({ value, onPick, onClose }) {
-  const [q, setQ] = useState('')
+  const [q, setQ] = useState(''), [openCat, setOpenCat] = useState(() => (EX[value] || {}).cat || null)
   const terms = norm(q).split(/\s+/).filter(Boolean)
   const match = e => !terms.length || terms.every(t => norm(e.label + ' ' + (ALIAS[e.id] || '') + ' ' + ((CATS.find(c => c[0] === e.cat) || [])[1] || '')).includes(t))
   const L = EXERCISES.filter(e => e.cat !== 'fmt' && e.cat !== 'sport' && match(e))
   return <Sheet title="Choisir un exercice" onClose={onClose} noBug>
     <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Rechercher : pompes, squat, rameur…" aria-label="Rechercher un exercice"
       style={{ width: '100%', boxSizing: 'border-box', fontSize: 17, padding: '10px 12px', borderRadius: 12, border: 0, background: 'var(--fill)', color: 'var(--ink)', marginBottom: 10 }} />
-    {CATS.filter(([c]) => c !== 'sport').map(([c, l]) => { const E = L.filter(e => e.cat === c); return E.length ? <React.Fragment key={c}>
-      <h2 className="sec" style={{ marginTop: 8 }}>{l}</h2>
-      <List>{E.map(e => <Row key={e.id} title={e.label} sub={e.uni ? 'unilatéral (par côté)' : null} value={e.id === value ? '✓' : ''} chev={false} onClick={() => onPick(e.id, '')} />)}</List>
-    </React.Fragment> : null })}
+    {terms.length ? <p className="small muted" style={{ margin: '0 4px 6px' }}>{L.length} résultat(s)</p> : <p className="small muted" style={{ margin: '0 4px 6px' }}>Touchez une catégorie pour l’ouvrir, ou tapez un nom.</p>}
+    <List>{CATS.filter(([c]) => c !== 'sport').map(([c, l]) => { const E = L.filter(e => e.cat === c); if (!E.length) return null; const op = terms.length > 0 || openCat === c
+      return <React.Fragment key={c}>
+        <button className="row" onClick={() => setOpenCat(op && !terms.length ? null : c)} style={{ width: '100%', background: op ? 'var(--accent-soft)' : 'transparent' }} aria-expanded={op}>
+          <span className="label"><span className="t" style={{ fontWeight: 650 }}>{l}</span></span><span className="val small muted">{E.length}</span>
+          <Icon name="chev" size={14} style={{ transform: op ? 'rotate(90deg)' : 'none', opacity: .5, transition: 'transform .15s' }} /></button>
+        {op && E.map(e => <Row key={e.id} title={e.label} sub={e.uni ? 'unilatéral (par côté)' : null} value={e.id === value ? '✓' : ''} chev={false} onClick={() => onPick(e.id, '')} className="indent" />)}
+      </React.Fragment> })}</List>
     {q.trim() && <List><Row icon="plus" color="#30d158" title={'Exercice libre « ' + q.trim() + ' »'} sub="Pas dans la liste ? Créez-le avec ce nom" onClick={() => onPick('free', q.trim())} /></List>}
     {!L.length && !q.trim() && <Empty>Aucun exercice.</Empty>}
   </Sheet>
@@ -82,7 +86,9 @@ function PainWarn({ ex, zones, onSwap }) {
     {a && <button className="btn tinted small" style={{ minHeight: 0, padding: '3px 8px' }} onClick={() => onSwap(a)}>Remplacer par {EX[a].label}</button>}
   </div>
 }
-const Tools = ({ i, n, onMove, onDel }) => <>
+const Tools = ({ i, n, onMove, onDel, onDrag }) => <>
+  {onDrag && <span role="button" aria-label="Faire glisser pour déplacer" title="Faire glisser pour changer l’ordre" onPointerDown={onDrag}
+    style={{ touchAction: 'none', cursor: 'grab', width: 34, height: 34, display: 'grid', placeItems: 'center', fontSize: 20, color: 'var(--ink-3)', userSelect: 'none' }}>≡</span>}
   <button className="icon-btn" aria-label="Monter" disabled={i === 0} onClick={() => onMove(-1)} style={{ width: 30, height: 30 }}>↑</button>
   <button className="icon-btn" aria-label="Descendre" disabled={i === n - 1} onClick={() => onMove(1)} style={{ width: 30, height: 30 }}>↓</button>
   <button className="icon-btn" aria-label="Supprimer" onClick={onDel} style={{ width: 30, height: 30 }}><Icon name="trash" size={16} /></button>
@@ -90,13 +96,13 @@ const Tools = ({ i, n, onMove, onDel }) => <>
 const WhoSeg = ({ b, names, onChange }) => <div className="seg" style={{ margin: 0, flex: 1, minWidth: 170 }}>{[['A', names.A], ['B', names.B], ['AB', 'Les deux']].map(([w, l]) => <button key={w} aria-pressed={(b.w || 'A') === w} onClick={() => onChange({ ...b, w })}>{l}</button>)}</div>
 const num = (v, d = 0) => { const n = parseNum(v); return n == null ? d : n }
 
-function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
+function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel, onDrag }) {
   const e = EX[b.ex] || {}, strength = STRENGTH.includes(e.cat), sets = Math.max(1, +b.sets || 1)
   const per = !!b.setTargets
   const setKeys = (e.m || []).filter(k => k !== 'time' || !strength).filter(k => k !== 'rounds')
   const swap = (ex, name = '') => onChange({ ...b, ex, name, target: defaultTarget(ex), setTargets: undefined })
   return <div className="row stack">
-    <div className="row-gap"><b className="num faint">{i + 1}</b><ExSelect value={b.ex} name={b.name} onChange={swap} /><Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
+    <div className="row-gap"><ExSelect value={b.ex} name={b.name} onChange={swap} /><Tools i={i} n={n} onMove={onMove} onDel={onDel} onDrag={onDrag} /></div>
     {b.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice (ex. gainage latéral)" value={b.name} onChange={ev => onChange({ ...b, name: ev.target.value })} />}
     <PainWarn ex={b.ex} zones={zones} onSwap={swap} />
     {!per && <TargetFields key={b.ex} ex={b.ex} target={b.target || {}} strength={strength} onChange={t => onChange({ ...b, target: t })} />}
@@ -119,16 +125,16 @@ function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
   </div>
 }
 
-function GroupEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
+function GroupEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel, onDrag }) {
   const F = FORMATS[b.fmt] || {}, timed = b.fmt === 'tabata' || b.fmt === 'interval'
   const setItem = (j, it) => onChange({ ...b, items: b.items.map((x, k) => k === j ? it : x) })
   const P = ({ label, k, time, w = 52 }) => <><span>{label}</span><input style={{ ...inp, width: w }} {...(time ? TIME : { inputMode: 'numeric' })} defaultValue={time ? fmt(b[k]) : b[k]} key={b.fmt + k}
     onBlur={ev => { const v = time ? parseT(ev.target.value) : num(ev.target.value, b[k]); onChange({ ...b, [k]: Number.isNaN(v) || v == null ? b[k] : v }) }} /></>
   return <div className="row stack" style={{ background: 'var(--accent-soft)', borderLeft: '3px solid var(--accent)' }}>
-    <div className="row-gap"><b className="num faint">{i + 1}</b>
-      <select value={b.fmt} onChange={ev => onChange({ ...newGroup(ev.target.value), items: b.items, w: b.w })} style={{ ...inp, flex: 1, fontWeight: 600 }}>{Object.entries(FORMATS).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}</select>
-      <Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
-    <div className="tiny muted">{F.hint}</div>
+    <div className="row-gap">
+      <select value={b.fmt} onChange={ev => onChange({ ...newGroup(ev.target.value), items: b.items, w: b.w })} style={{ ...inp, flex: 1, fontWeight: 600, appearance: 'auto' }}>{Object.entries(FORMATS).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}</select>
+      <Tools i={i} n={n} onMove={onMove} onDel={onDel} onDrag={onDrag} /></div>
+    <div className="small muted">{F.hint}</div>
     <div className="row-gap small">
       {(b.fmt === 'circuit' || b.fmt === 'superset') && <><P label="Tours" k="rounds" />{b.fmt === 'circuit' && <P label="Récup entre exercices" k="restItem" time />}<P label="Récup après le tour" k="rest" time /></>}
       {b.fmt === 'emom' && <P label="Minutes" k="minutes" />}
@@ -175,6 +181,19 @@ export function NewCustom() {
   const team = f.format === 'duo' ? mine.find(t => t.id === f.team) : null
   const names = team ? { A: slotName(team, 'A'), B: slotName(team, 'B') } : { A: profile.display_name, B: '' }
   const upd = (i, b) => setBlocks(L => L.map((x, k) => k === i ? b : x))
+  // Glisser-déposer : on maintient la poignée ≡ et on déplace l'exercice ; l'ordre change dès qu'on survole une autre carte
+  const [drag, setDrag] = useState(null)
+  function startDrag(i, e) {
+    e.preventDefault(); let cur = i; setDrag(i)
+    const mv = ev => {
+      const y = ev.clientY, cards = [...document.querySelectorAll('[data-blk]')]; let t = cur
+      cards.forEach((el, k) => { const r = el.getBoundingClientRect(); if (k !== cur && y > r.top + r.height * 0.25 && y < r.bottom - r.height * 0.25) t = k })
+      if (t !== cur) { const from = cur; setBlocks(L => { const c = [...L]; const [x] = c.splice(from, 1); c.splice(t, 0, x); return c }); cur = t; setDrag(t) }
+      if (y < 80) scrollBy(0, -12); else if (y > innerHeight - 120) scrollBy(0, 12)
+    }
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); setDrag(null) }
+    addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up)
+  }
   const move = (i, d) => setBlocks(L => { const c = [...L]; const [x] = c.splice(i, 1); c.splice(i + d, 0, x); return c })
   const nSteps = useMemo(() => expand(blocks).length, [blocks])
   const future = f.date > todayISO()
@@ -209,9 +228,13 @@ export function NewCustom() {
     </List>
     <h2 className="sec">Exercices et objectifs <span className="faint small">· {nSteps} étape(s)</span></h2>
     {painSwaps.length > 0 && <div className="note small">Douleur déclarée : {painSwaps.length} exercice(s) la sollicitent. <button className="btn tinted small" onClick={() => setBlocks(adaptBlocks(blocks, zones).blocks)}>Tout adapter</button></div>}
-    <List>{blocks.map((b, i) => isGroup(b)
-        ? <GroupEditor key={i + b.fmt} b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} />
-        : <BlockEditor key={i + b.ex} b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} />)}
+    {blocks.map((b, i) => <div key={i + (b.fmt || b.ex)} data-blk={i} className="glass" style={{ borderRadius: 18, marginBottom: 10, overflow: 'hidden', outline: drag === i ? '2px solid var(--accent)' : 'none', transform: drag === i ? 'scale(1.01)' : 'none', transition: 'transform .1s' }}>
+      <div className="tiny" style={{ padding: '8px 14px 0', fontWeight: 700, letterSpacing: '.04em', color: isGroup(b) ? 'var(--accent)' : 'var(--ink-3)' }}>{isGroup(b) ? 'BLOC · ' + (FORMATS[b.fmt] || {}).label.toUpperCase() : 'EXERCICE ' + (i + 1)}</div>
+      {isGroup(b)
+        ? <GroupEditor b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} onDrag={e => startDrag(i, e)} />
+        : <BlockEditor b={b} i={i} n={blocks.length} duo={!!team} names={names} zones={zones} onChange={x => upd(i, x)} onMove={d => move(i, d)} onDel={() => setBlocks(L => L.filter((_, k) => k !== i))} onDrag={e => startDrag(i, e)} />}
+    </div>)}
+    <List>
       <Row icon="plus" color="#30d158" title="Ajouter un exercice" sub="Séries, répétitions, charge, RIR, tempo…" onClick={() => setBlocks(L => [...L, newBlock(L.length && !isGroup(L[L.length - 1]) ? L[L.length - 1].ex : 'squat')])} />
       <Row icon="timer" color="#5e5ce6" title="Ajouter un bloc" sub="Circuit, superset, EMOM, AMRAP, Tabata, intervalles" onClick={() => setAdding(a => !a)} />
       {adding && <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>{Object.entries(FORMATS).map(([k, F]) => <button key={k} className="btn glass small" onClick={() => { setBlocks(L => [...L, newGroup(k)]); setAdding(false) }}>{F.label}</button>)}</div>}

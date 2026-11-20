@@ -156,11 +156,14 @@ export const demoApi = {
     },
   },
   bugs: {
-    list: () => wait([...D().bug_reports].reverse().map(({ img, ...b }) => b)),
+    list: () => wait([...D().bug_reports].reverse().map(({ img, ...b }) => ({ ...b, n_comments: (D().bug_comments || []).filter(c => c.bug_id === b.id).length }))),
     get: id => wait(D().bug_reports.find(b => b.id === id)),
     add(b) { const d = D(); const r = { id: uid(), no: d.bug_reports.length + 1, user_id: ME, status: 'new', note: '', analysis: '', updated_by: '', created_at: new Date().toISOString(), ...b, has_img: !!b.img }; d.bug_reports.push(r); commit(); return wait({ id: r.id, no: r.no }) },
     update(id, patch, by) { const r = D().bug_reports.find(x => x.id === id); Object.assign(r, patch, { updated_by: by || '', updated_at: new Date().toISOString() }); commit(); const { img, ...rest } = r; return wait(rest) },
     remove(id) { D().bug_reports = D().bug_reports.filter(x => x.id !== id); commit(); return wait(null) },
+    comments: id => wait((D().bug_comments || []).filter(c => c.bug_id === id)),
+    comment(id, text, pseudo, fromAdmin, img) { const d = D(); d.bug_comments = d.bug_comments || []; const r = { id: uid(), bug_id: id, user_id: ME, text, pseudo, from_admin: !!fromAdmin, img: img || null, created_at: new Date().toISOString() }; d.bug_comments.push(r)
+      const b = d.bug_reports.find(x => x.id === id); if (b && !fromAdmin) b.status = 'new'; commit(); return wait(r) },
     async triage() { return { analysis: '' } },
     isAdmin: async () => true,
     apiConfig: async () => ({ off: false, n: 0, last: null }),

@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, List, Row, Seg, Switch, Sheet, Empty, Icon, useToast, useLoad } from '../ui.jsx'
+import { Page, List, Row, Seg, Switch, Sheet, Empty, Icon, Chips, useToast, useLoad } from '../ui.jsx'
 import { BUG_ST, bugDate, download, dataUrlBlob, exportCsv, APP_VERSION } from '../lib/bugs.js'
 
 export function BugSheet({ shot, ctx, onClose }) {
@@ -60,14 +60,47 @@ export function BugsPage() {
       <b>Suivi avec Claude</b> : accès API {cfg.data.off ? <b className="bad">coupé</b> : <b>actif</b>}{cfg.data.last ? ' · dernier accès ' + bugDate(cfg.data.last) + ` (${cfg.data.n || 0} appels)` : ' · jamais utilisé'}. Claude lit les signalements (sans adresse e-mail), met à jour leur statut et leur note de suivi.
       <div><button className="btn glass small" style={{ marginTop: 8 }} onClick={async () => { await api.bugs.setApiOff(!cfg.data.off); cfg.reload() }}>{cfg.data.off ? 'Rétablir l’accès' : 'Couper l’accès'}</button></div>
     </div>}
-    <div className="seg">{[['open', 'À traiter'], ['new', 'Nouveaux'], ['doing', 'En cours'], ['done', 'Résolus'], ['all', 'Tous']].map(([k, l]) => <button key={k} aria-pressed={f === k} onClick={() => setF(k)}>{l} ({n(k)})</button>)}</div>
+    <Chips value={f} onChange={setF} label="Filtrer" options={[['open', 'À traiter'], ['new', 'Nouveaux'], ['doing', 'En cours'], ['done', 'Résolus'], ['all', 'Tous']].map(([k, l]) => [k, `${l} (${n(k)})`])} />
     <List><div className="row"><input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Rechercher : n°, membre, écran, mot…" style={{ width: '100%', textAlign: 'left', color: 'var(--ink)' }} /></div></List>
     {admin.data && <div className="row-gap" style={{ margin: '10px 0' }}><button className="btn glass small" onClick={() => exportCsv(L)}>Exporter (CSV)</button><button className="btn glass small" onClick={exportJson}>Exporter avec captures</button><span className="small muted">{msg}</span></div>}
     {L.length ? <List>{L.map(b => { const s = BUG_ST[b.status] || BUG_ST.new; return <Row key={b.id} title={<><span className="num faint">#{b.no}</span> {b.text.slice(0, 90)}{b.text.length > 90 ? '…' : ''}</>}
-      sub={`${bugDate(b.created_at)} · ${b.pseudo} · ${(b.ctx && b.ctx.ecran) || ''}${b.has_img ? ' · capture' : ''}${b.analysis ? ' · diagnostic' : ''}`} value={<span className={'badge ' + s[1]}>{s[0]}</span>} onClick={() => setOpen(b)} /> })}</List>
+      sub={`${bugDate(b.created_at)} · ${b.pseudo} · ${(b.ctx && b.ctx.ecran) || ''}${b.has_img ? ' · capture' : ''}${b.analysis ? ' · diagnostic' : ''}${b.n_comments ? ' · ' + b.n_comments + ' échange(s)' : ''}${!admin.data && b.note ? ' · réponse' : ''}`} value={<span className={'badge ' + s[1]}>{s[0]}</span>} onClick={() => setOpen(b)} /> })}</List>
       : <div className="glass card"><Empty icon="bug">{list.loading ? 'Chargement…' : 'Aucun signalement.'}</Empty></div>}
-    {open && <BugDetail bug={open} admin={!!admin.data} me={profile} onClose={() => setOpen(null)} onChange={() => { list.reload(); setOpen(null) }} />}
+    {open && <BugDetail bug={open} admin={!!admin.data} me={profile} onClose={() => setOpen(null)} onChange={keep => { list.reload(); if (!keep) setOpen(null) }} />}
   </Page>
+}
+
+/** Échanges : le membre apporte des précisions (texte, capture), l'équipe répond. Une précision remet le signalement « Nouveau ». */
+function Thread({ bug, admin, me, onSent }) {
+  const toast = useToast()
+  const L = useLoad(() => api.bugs.comments(bug.id).catch(e => { if (/bug_comments/.test(e.message)) return null; throw e }), [bug.id])
+  const [t, setT] = useState(''), [img, setImg] = useState(null), [busy, setBusy] = useState(false)
+  if (L.data === null) return admin ? <p className="foot">Pour activer les échanges sur les signalements, exécutez le bloc « bug_comments » de supabase/schema.sql.</p> : null
+  async function pick(e) {
+    const f = e.target.files && e.target.files[0]; if (!f) return
+    const im = new Image(); im.onload = () => { const w = Math.min(900, im.width), c = document.createElement('canvas'); c.width = w; c.height = Math.round(im.height * w / im.width); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); let u = c.toDataURL('image/jpeg', 0.7); if (u.length > 880000) u = c.toDataURL('image/jpeg', 0.45); setImg(u.length < 890000 ? u : null) }
+    im.src = URL.createObjectURL(f)
+  }
+  async function send() {
+    if (!t.trim()) return
+    setBusy(true)
+    try { await api.bugs.comment(bug.id, t.trim().slice(0, 2000), me.display_name || '', admin, img); setT(''); setImg(null); L.reload(); toast(admin ? 'Réponse envoyée' : 'Précision envoyée : le signalement repasse en « Nouveau »'); onSent && onSent() }
+    catch (e) { toast(e.message) } finally { setBusy(false) }
+  }
+  return <>
+    <h2 className="sec">Échanges</h2>
+    {(L.data || []).length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>{L.data.map(c => <div key={c.id} style={{ alignSelf: c.from_admin ? 'flex-start' : 'flex-end', maxWidth: '88%', background: c.from_admin ? 'var(--fill)' : 'var(--accent-soft)', borderRadius: 14, padding: '8px 11px' }}>
+      <div className="tiny muted">{c.from_admin ? 'Équipe' : c.pseudo} · {bugDate(c.created_at)}</div>
+      <div className="small" style={{ whiteSpace: 'pre-wrap' }}>{c.text}</div>
+      {c.img && <img src={c.img} alt="Capture jointe" style={{ width: '100%', borderRadius: 10, marginTop: 6 }} />}
+    </div>)}</div>}
+    <List><div className="row stack">
+      <textarea rows={3} maxLength={2000} value={t} onChange={e => setT(e.target.value)} placeholder={admin ? 'Répondre au membre…' : 'Apporter une précision : ce qui gêne, où, ce que vous attendiez…'} />
+      <div className="row-gap small"><label className="btn glass small" style={{ cursor: 'pointer' }}><Icon name="upload" size={14} />{img ? 'Capture jointe ✓' : 'Joindre une capture'}<input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} /></label>
+        {img && <button className="btn plain small" onClick={() => setImg(null)}>Retirer</button>}<span className="spacer" />
+        <button className="btn small" disabled={busy || !t.trim()} onClick={send}>{busy ? 'Envoi…' : 'Envoyer'}</button></div>
+    </div></List>
+  </>
 }
 
 function BugDetail({ bug, admin, me, onClose, onChange }) {
@@ -91,7 +124,8 @@ function BugDetail({ bug, admin, me, onClose, onChange }) {
     {c.actions && c.actions.length > 0 && <details style={{ marginTop: 6 }}><summary className="small">Dernières actions ({c.actions.length})</summary><pre className="tiny mono" style={{ whiteSpace: 'pre-wrap' }}>{c.actions.map(a => `${a.t} ${a.k} : ${a.v}`).join('\n')}</pre></details>}
     <h2 className="sec">Note de suivi</h2>
     {admin ? <List><div className="row stack"><textarea rows={3} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="Analyse, correction prévue, version…" /></div></List>
-      : <p className="small">{b.note || 'Pas encore de note.'}</p>}
+      : <div className="glass card small">{b.note || 'Pas encore de réponse.'}</div>}
+    <Thread bug={b} admin={admin} me={me} onSent={() => onChange(true)} />
     {b.updated_by && <p className="foot">Dernière mise à jour par {b.updated_by} le {bugDate(b.updated_at)}</p>}
     {err && <p className="err">{err}</p>}
     {admin && <div className="row-gap" style={{ marginTop: 12 }}><button className="btn" style={{ flex: 1 }} onClick={save}>Enregistrer</button><button className="btn glass" style={{ color: 'var(--bad)' }} onClick={del}>{conf ? 'Confirmer' : 'Supprimer'}</button></div>}

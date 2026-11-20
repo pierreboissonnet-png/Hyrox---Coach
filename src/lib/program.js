@@ -83,7 +83,8 @@ export function buildProgram(o = {}) {
   if (W.day && o.today != null && !light) {
     let touched = false
     days = days.map((d, i) => {
-      if (i !== o.today && i !== o.today + 1) return d
+      const di = d.date ? (new Date(d.date + 'T12:00:00').getDay() + 6) % 7 : i   // jour de la semaine (une journée peut compter 2 séances)
+      if (di !== o.today && di !== o.today + 1) return d
       if (W.day.hard && INTENSE.includes(d.key)) { touched = true; return { ...S.z2, day: d.day, date: d.date, focus: d.focus, blocks: null, key: 'z2', cycle: d.cycle, was: d.title, adapted: 'Adapté à votre forme du jour (' + W.day.why + ')' } }
       if (W.day.mid && d.key !== 'repos') { touched = true; return { ...d, min: Math.round(d.min * 0.8 / 5) * 5, adapted: 'Volume réduit d’environ 20 % (' + W.day.why + ')' } }
       return d

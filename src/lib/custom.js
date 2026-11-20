@@ -88,7 +88,7 @@ export const EXERCISES = [
 export const EX = Object.fromEntries(EXERCISES.map(e => [e.id, e]))
 export const CATS = [['hyrox', 'Ateliers Hyrox'], ['run', 'Course'], ['cardio', 'Cardio'], ['force', 'Musculation (barre)'], ['halt', 'Haltères, kettlebell, sandbag'], ['machine', 'Machines'], ['pdc', 'Poids du corps'], ['core', 'Gainage et abdos'], ['mob', 'Mobilité'], ['sport', 'Activités'], ['libre', 'Libre']]
 export const STRENGTH = ['force', 'halt', 'machine']
-export const METRICS = { time: ['Temps', 'mm:ss'], meters: ['Distance', 'm'], reps: ['Répétitions', 'reps'], load: ['Charge', 'kg'], cal: ['Calories', 'kcal'], rounds: ['Tours', 'tours'] }
+export const METRICS = { time: ['Temps', 'mm:ss'], meters: ['Distance', 'm'], reps: ['Répétitions', 'reps'], load: ['Charge', 'kg'], cal: ['Calories', 'kcal'], rounds: ['Tours', 'tours'], res: ['Résistance', 'niveau'] }
 const MET_CAT = { hyrox: 10, run: 10, cardio: 8, force: 5, halt: 5.5, machine: 4.5, pdc: 7, core: 4, mob: 2.5, sport: 7, libre: 6, fmt: 9 }
 export const metOf = ex => { const e = EX[ex] || {}; return e.met || MET_CAT[e.cat] || 6 }
 /** Formats de bloc : circuit, superset, EMOM, AMRAP, Tabata, intervalles */
@@ -265,7 +265,7 @@ export function progression(s, hrBy = {}, zones = null) {
     return { label: b.ex === 'amrap' ? 'AMRAP' : exLabel(b), ex: b.ex, achievement: a, target: t, next, why, e1rm: best.length ? Math.max(...best) : null, hmax }
   }).filter(Boolean)
 }
-export const fmtTarget = t => !t ? '—' : [t.rounds ? t.rounds + ' tours' : null, t.meters ? t.meters + ' m' : null, t.cal ? t.cal + ' cal' : null, t.reps ? t.reps + ' reps' : null, t.load ? t.load + ' kg' : null, t.time ? fmt(t.time) : null, t.rir != null && t.rir !== '' ? 'RIR ' + t.rir : null].filter(Boolean).join(' · ') || '—'
+export const fmtTarget = t => !t ? '—' : [t.rounds ? t.rounds + ' tours' : null, t.meters ? t.meters + ' m' : null, t.cal ? t.cal + ' cal' : null, t.reps ? t.reps + ' reps' : null, t.load ? t.load + ' kg' : null, t.time ? fmt(t.time) : null, t.rir != null && t.rir !== '' ? 'RIR ' + t.rir : null, t.res ? 'résistance ' + t.res : null].filter(Boolean).join(' · ') || '—'
 /** Libellé d'une étape avec sa position (série, tour, minute) */
 export function stepLabel(x) {
   const base = exLabel(x)
