@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, Stat, useToast, useLoad } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, Stat, useToast, useLoad, TIME } from '../ui.jsx'
 import { LineChart, DeltaBars, COLORS } from '../charts.jsx'
 import { STATIONS, SEGS, STATION, normPlan, planRelays, fmt, fd, parseT, frDate, fmtU, tone } from '../lib/hyrox.js'
 import { summary, athleteStats, isComplete, cyclePerformance } from '../lib/analyze.js'
@@ -178,9 +178,9 @@ export function PlanEditor({ id }) {
     <h2 className="sec">Courses et Rox</h2>
     <List>
       <Field label="Distance par course (entraînement)" sub="km"><input type="number" step="0.05" defaultValue={plan.runKm} onBlur={e => setPlan(p => ({ ...p, runKm: +e.target.value || 1 }))} /></Field>
-      <Field label="Temps par course" sub="appliqué aux 8 courses"><input defaultValue={fmt(plan.obj.r1)} onBlur={e => setRunAll(e.target.value)} /></Field>
-      <Field label="Rox entrée (chaque)"><input defaultValue={fmt(plan.obj.ri1)} onBlur={e => { const s = parseT(e.target.value); if (s) setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 8; k++) o['ri' + k] = s; return { ...p, obj: o } }) }} /></Field>
-      <Field label="Rox sortie (chaque)"><input defaultValue={fmt(plan.obj.ro1)} onBlur={e => { const s = parseT(e.target.value); if (s) setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 7; k++) o['ro' + k] = s; return { ...p, obj: o } }) }} /></Field>
+      <Field label="Temps par course" sub="appliqué aux 8 courses"><input {...TIME} defaultValue={fmt(plan.obj.r1)} onBlur={e => setRunAll(e.target.value)} /></Field>
+      <Field label="Rox entrée (chaque)"><input {...TIME} defaultValue={fmt(plan.obj.ri1)} onBlur={e => { const s = parseT(e.target.value); if (s) setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 8; k++) o['ri' + k] = s; return { ...p, obj: o } }) }} /></Field>
+      <Field label="Rox sortie (chaque)"><input {...TIME} defaultValue={fmt(plan.obj.ro1)} onBlur={e => { const s = parseT(e.target.value); if (s) setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 7; k++) o['ro' + k] = s; return { ...p, obj: o } }) }} /></Field>
     </List>
     <h2 className="sec">Ateliers et relais</h2>
     <p className="foot" style={{ marginTop: -4, marginBottom: 8 }}><span className="dotA" />{nA} · <span className="dotB" />{nB}</p>
@@ -188,7 +188,7 @@ export function PlanEditor({ id }) {
       {STATIONS.map(x => { const st = plan.strat[x.id], rel = planRelays(plan, x.id); return <React.Fragment key={x.id}>
         <Row title={x.label} sub={rel.map(r => (r.w === 'A' ? nA : nB) + ' ' + r.label).join(' · ')} value={fmt(plan.obj[x.id])} onClick={() => setOpen(open === x.id ? null : x.id)} />
         {open === x.id && <div className="row stack" style={{ background: 'var(--fill)' }}>
-          <div className="row-gap"><span className="small">Objectif</span><input className="num" style={{ width: 80, textAlign: 'right', background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} defaultValue={fmt(plan.obj[x.id])} onBlur={e => setObj(x.id, e.target.value)} />
+          <div className="row-gap"><span className="small">Objectif</span><input className="num" style={{ width: 80, textAlign: 'right', background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} {...TIME} defaultValue={fmt(plan.obj[x.id])} onBlur={e => setObj(x.id, e.target.value)} />
             <span className="small">Unité</span><select value={st.u} onChange={e => { const u = e.target.value; setSt(x.id, { u, tot: u === 's' ? plan.obj[x.id] : x.tot, t: [] }) }} style={{ background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }}><option value={x.u}>{x.u.trim()}</option><option value="s">secondes</option></select>
             <span className="small">Changement</span><input type="number" style={{ width: 52, background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} value={st.trans} onChange={e => setSt(x.id, { trans: +e.target.value })} /><span className="small">s</span></div>
           <div className="row-gap">{[1, 2, 4, 8, 10].map(n => <button key={n} className="btn glass small" onClick={() => { const step = st.tot / n; setSt(x.id, { t: Array.from({ length: n }, (_, i) => ({ a: Math.round(i * step), b: Math.round((i + 1) * step), w: i % 2 ? 'B' : 'A', n: '' })) }) }}>{n} tranche{n > 1 ? 's' : ''}</button>)}</div>

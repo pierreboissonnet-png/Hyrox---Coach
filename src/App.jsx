@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, createContext, useContext, Component } from 'react'
 import { api, configured, isDemo } from './lib/api.js'
-import { Icon, ToastHost } from './ui.jsx'
+import { Icon, ToastHost, trackNav } from './ui.jsx'
 import { AuthPage, Onboarding, SetupPage, NewPassword } from './pages/Auth.jsx'
 import Home from './pages/Home.jsx'
 import Races from './pages/Races.jsx'
@@ -29,7 +29,7 @@ export function applySettings(s) {
 
 function useHash() {
   const [h, set] = useState(location.hash || '#/')
-  useEffect(() => { const f = () => { set(location.hash || '#/'); window.scrollTo(0, 0) }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, [])
+  useEffect(() => { trackNav(location.hash || '#/'); const f = () => { const h = location.hash || '#/'; trackNav(h); set(h); window.scrollTo(0, 0) }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f) }, [])
   return h
 }
 

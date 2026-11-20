@@ -158,6 +158,11 @@ export function Program() {
       <div className="tiny muted" style={{ marginTop: 6 }}>{[...new Set(weeks.map(w => w.phase.id))].map(id => <span key={id} style={{ marginRight: 10 }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: PH_COLOR[id], marginRight: 3 }} />{weeks.find(w => w.phase.id === id).phase.label}</span>)}↓ = semaine allégée</div>
     </div>
 
+    <div className="row-gap" style={{ gap: 6 }}>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=douleurs"><Icon name="heart" size={14} />Douleur</a>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/seance/specifique?lib=1&back=%23%2Fmoi%2Fprogramme"><Icon name="bolt" size={14} />Séances</a>
+    </div>
     <div className="row-gap" style={{ margin: '14px 4px 6px' }}>
       <button className="icon-btn glass" disabled={wi === 0} onClick={() => setSel(wi - 1)} aria-label="Semaine précédente"><Icon name="back" size={18} /></button>
       <div style={{ flex: 1, textAlign: 'center' }}><b>Semaine {wi + 1}/{weeks.length}</b><div className="tiny muted">du {frDate(week.start).slice(0, 5)} au {frDate(addDays(week.start, 6)).slice(0, 5)} · {W.done}/{W.n} faites{week.deload ? ' · allégée' : ''}</div></div>

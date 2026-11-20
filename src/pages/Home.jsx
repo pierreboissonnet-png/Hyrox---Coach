@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
+import { QuickSheet } from './Activity.jsx'
 import { useApp } from '../App.jsx'
-import { Page, Sec, List, Row, Stat, Empty, Icon, useLoad } from '../ui.jsx'
+import { Page, Sec, List, Row, Stat, Empty, Icon, Sheet, useLoad } from '../ui.jsx'
 import { api, setDemo } from '../lib/api.js'
 import { sleepStats, fmtH } from '../lib/sleep.js'
 import { Ring } from '../charts.jsx'
@@ -13,6 +14,8 @@ import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/cus
 import { useTodayPlan } from './Plan.jsx'
 import { todayISO } from '../lib/hyrox.js'
 
+const tomorrow = () => { const d = new Date(Date.now() + 864e5); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10) }
+
 export default function Home() {
   const { profile, races, sessions, teams, loaded } = useApp()
   const ups = upcoming(races), next = ups[0], main = mainRace(races)
@@ -21,6 +24,7 @@ export default function Home() {
   const last = sessions.find(s => !isKeeperOnly(s, profile.id, teams) && !isCustom(s))
   const lastCustom = sessions.find(s => !isKeeperOnly(s, profile.id, teams) && isCustom(s) && !isPlanned(s) && !isQuick(s))
   const tp = useTodayPlan()
+  const [train, setTrain] = useState(false), [quick, setQuick] = useState(false)
   const plannedToday = sessions.filter(s => isPlanned(s) && s.session_date === todayISO() && !isKeeperOnly(s, profile.id, teams))
   const toKeep = sessions.filter(s => isKeeperOnly(s, profile.id, teams) && (isCustom(s) ? !customSummary(s).complete : normData(s.data).cp[30] == null))
   const sum = useMemo(() => last ? summary(last, last.plan || plans[last.team_id]) : null, [last, teams])
@@ -47,10 +51,31 @@ export default function Home() {
     </a> : <div className="hero glass"><div className="kick">Aucune course prévue</div><p className="muted">Ajoutez vos prochains Hyrox pour lancer le compte à rebours.</p><a className="btn small" href="#/courses">Ajouter une course</a></div>}
 
     <div className="row-gap" style={{ marginBottom: 6 }}>
-      <a className="btn" href="#/seance/nouvelle" style={{ flex: 1 }}><Icon name="play" size={18} />S’entraîner</a>
+      <button className="btn" onClick={() => setTrain(true)} style={{ flex: 1 }}><Icon name="play" size={18} />S’entraîner</button>
       <a className="btn glass" href="#/moi/programme" style={{ flex: 1 }}><Icon name="cal" size={18} />Programme</a>
     </div>
 
+    <div className="row-gap" style={{ gap: 6, marginBottom: 6 }}>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a>
+      <button className="btn glass small" style={{ flex: 1 }} onClick={() => setQuick(true)}><Icon name="plus" size={14} />Activité</button>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/etirements"><Icon name="leaf" size={14} />Étirer</a>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/nutrition"><Icon name="leaf" size={14} />Manger</a>
+    </div>
+    {train && <Sheet title="S’entraîner" onClose={() => setTrain(false)}>
+      <List>
+        {plannedToday.map(s => <Row key={s.id} icon="play" color="#30d158" title={'Lancer « ' + s.name + ' »'} sub="Séance prévue aujourd’hui" href={'#/seance/' + s.id + '/chrono'} />)}
+        {tp && tp.d.key !== 'repos' && !tp.done && <Row icon="cal" color="#5e5ce6" title={'Séance du plan : ' + tp.d.title} sub="Préparer et lancer depuis le programme" href="#/moi/programme" />}
+        <Row icon="bolt" color="#bf5af2" title="Séance personnalisée" sub="Renfo, circuits, EMOM, course… à composer" href="#/seance/specifique" />
+        <Row icon="cal" color="#bf5af2" title="Bibliothèque de séances" sub="Séances types et mes modèles" href="#/seance/specifique?lib=1" />
+        <Row icon="timer" color="#0a84ff" title="Format Hyrox" sub="Simulation ou entraînement avec les 8 ateliers, relais en duo" href="#/seance/nouvelle" />
+      </List>
+      <List>
+        <Row icon="plus" color="#ff9f0a" title="Ajouter une activité déjà faite" sub="Footing, vélo, match, renfo à la salle…" onClick={() => { setTrain(false); setQuick(true) }} />
+        <Row icon="cal" color="#8e8e93" title="Planifier une séance" sub="La pré-enregistrer pour un autre jour" href={'#/seance/specifique?date=' + tomorrow()} />
+        <Row icon="timer" color="#30d158" title="Pointer un athlète" sub="Enregistrer les temps de quelqu’un" href="#/seances" />
+      </List>
+    </Sheet>}
+    {quick && <QuickSheet onClose={() => setQuick(false)} />}
     {toKeep.length > 0 && <Sec title="À pointer"><List>{toKeep.map(s => <Row key={s.id} icon="timer" color="#30d158" title={'Pointer ' + (athleteNames(s) || s.name)} sub={s.name} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
     <Sec title={'Aujourd’hui · ' + (tp ? tp.phase.label : today.p.phase.label)}>
       <List>{plannedToday.map(s => <Row key={s.id} icon="play" color="#30d158" title={'Séance prévue : ' + s.name} sub="Pré-enregistrée pour aujourd’hui" value="Lancer" href={'#/seance/' + s.id + '/chrono'} />)}

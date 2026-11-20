@@ -3,7 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { hasB } from '../lib/session.js'
 import { api } from '../lib/api.js'
-import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum } from '../ui.jsx'
+import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, go } from '../ui.jsx'
+import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone } from '../lib/hyrox.js'
 import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel } from '../lib/custom.js'
@@ -29,23 +30,49 @@ function TargetFields({ ex, target, onChange, hide = [], strength }) {
   const keys = [...new Set([...base, ...extra])].filter(k => !hide.includes(k))
   const others = ['time', 'meters', 'reps', 'load', 'cal'].filter(k => !keys.includes(k) && !hide.includes(k))
   const cols = keys.length + (strength ? 1 : 0)
+  const [help, setHelp] = useState(false)
   return <div>
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, cols)}, 1fr)`, gap: 6 }}>
       {keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {METRICS[k][0]}{e.uni && (k === 'reps' || k === 'time') ? ' / côté' : ''} <span className="faint">({METRICS[k][1]})</span>
-        <input style={inp} inputMode={k === 'time' ? 'text' : 'decimal'} placeholder="—" defaultValue={fmtVal(k, target[k])}
+        <input style={inp} {...(k === 'time' ? TIME : { inputMode: 'decimal', placeholder: '—' })} defaultValue={fmtVal(k, target[k])}
           onBlur={ev => { const n = readVal(k, ev.target.value); if (n !== undefined) onChange({ ...target, [k]: n }) }} />
       </label>)}
-      {strength && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }} title="Répétitions en réserve en fin de série">RIR <span className="faint">(en réserve)</span>
-        <input style={inp} inputMode="numeric" placeholder="—" defaultValue={target.rir ?? ''} onBlur={ev => { const n = readVal('rir', ev.target.value); if (n !== undefined) onChange({ ...target, rir: n }) }} /></label>}
+      {strength && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span>Reps en réserve <button type="button" className="link" aria-label="Qu’est-ce que les reps en réserve ?" onClick={ev => { ev.preventDefault(); setHelp(h => !h) }} style={{ background: 'none', border: 0, padding: 0, color: 'var(--accent)', fontSize: 13 }}>ⓘ</button></span>
+        <input style={inp} inputMode="numeric" placeholder="ex. 2" defaultValue={target.rir ?? ''} onBlur={ev => { const n = readVal('rir', ev.target.value); if (n !== undefined) onChange({ ...target, rir: n }) }} /></label>}
     </div>
+    {help && <div className="note small" style={{ margin: '6px 0 0' }}><b>Reps en réserve (RIR)</b> : combien de répétitions vous auriez encore pu faire en fin de série. 8 reps avec 2 en réserve = une charge avec laquelle vous pourriez en faire 10. <b>0</b> = jusqu’à l’échec · <b>1–2</b> = dur mais propre, idéal pour progresser · <b>3–4</b> = confortable (semaine chargée, technique). Pour l’Hyrox, visez 1 à 3. Facultatif.</div>}
     {others.length > 0 && <div className="row-gap tiny" style={{ marginTop: 4, gap: 4 }}><span className="faint">+ mesure :</span>{others.map(k => <button key={k} className="link" style={{ fontSize: 12, padding: '0 4px', minHeight: 0, background: 'none', border: 0, color: 'var(--accent)' }} onClick={() => setExtra(x => [...x, k])}>{METRICS[k][0].toLowerCase()}</button>)}</div>}
   </div>
 }
-function ExSelect({ value, onChange, style }) {
-  return <select value={value} onChange={e => onChange(e.target.value)} style={{ ...inp, flex: 1, textAlign: 'left', direction: 'ltr', ...style }}>
-    {CATS.map(([c, l]) => <optgroup key={c} label={l}>{EXERCISES.filter(x => x.cat === c).map(x => <option key={x.id} value={x.id}>{x.label}</option>)}</optgroup>)}
-  </select>
+const norm = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+// Autres noms courants, pour la recherche
+const ALIAS = { run: 'footing running jogging', bike: 'velo cyclisme home trainer', airbike: 'assault echo bike', row: 'rowing aviron rameur', ski: 'ski erg', wb: 'wallball wall ball medecine', burp: 'burpee saut', farm: 'farmer kettlebell marche', lunge: 'fente sac', squat: 'back squat flexion', deadlift: 'sdt deadlift', rdl: 'roumain rdl', bench: 'bench pecs', ohp: 'press militaire epaules', bentrow: 'tirage barre dos', hipthrust: 'pont fessier fessiers glute', pushup: 'pompe push up', pullup: 'traction pull up', plank: 'planche abdos', sideplank: 'planche laterale', legpress: 'presse', latpull: 'tirage poitrine lat pulldown', seatedrow: 'tirage assis poulie', legcurl: 'ischios', legext: 'quadriceps', calf: 'mollets', goblet: 'squat haltere', dbpress: 'developpe halteres pecs', curl: 'biceps', triceps: 'triceps', lateral: 'epaules deltoides', kbswing: 'kettlebell', airsquat: 'squat sans charge', mountain: 'abdos', abwheel: 'abdos', legraise: 'abdos', hollow: 'abdos gainage', russian: 'abdos obliques', mobility: 'etirements souplesse', foam: 'massage', rope: 'corde', swim: 'piscine nage', stairs: 'escaliers', walk: 'marche' }
+function ExSelect({ value, name, onChange, style }) {
+  const [open, setOpen] = useState(false)
+  const label = value === 'free' && name ? name : (EX[value] || {}).label || 'Choisir'
+  return <>
+    <button type="button" onClick={() => setOpen(true)} style={{ ...inp, flex: 1, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink)', fontSize: 16, ...style }} aria-label={'Exercice : ' + label + '. Changer'}>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span><Icon name="chev" size={14} style={{ transform: 'rotate(90deg)', opacity: .5 }} /></button>
+    {open && createPortal(<ExSheet value={value} onClose={() => setOpen(false)} onPick={(ex, nm) => { setOpen(false); onChange(ex, nm) }} />, document.body)}
+  </>
+}
+function ExSheet({ value, onPick, onClose }) {
+  const [q, setQ] = useState('')
+  const terms = norm(q).split(/\s+/).filter(Boolean)
+  const match = e => !terms.length || terms.every(t => norm(e.label + ' ' + (ALIAS[e.id] || '') + ' ' + ((CATS.find(c => c[0] === e.cat) || [])[1] || '')).includes(t))
+  const L = EXERCISES.filter(e => e.cat !== 'fmt' && e.cat !== 'sport' && match(e))
+  return <Sheet title="Choisir un exercice" onClose={onClose} noBug>
+    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Rechercher : pompes, squat, rameur…" aria-label="Rechercher un exercice"
+      style={{ width: '100%', boxSizing: 'border-box', fontSize: 17, padding: '10px 12px', borderRadius: 12, border: 0, background: 'var(--fill)', color: 'var(--ink)', marginBottom: 10 }} />
+    {CATS.filter(([c]) => c !== 'sport').map(([c, l]) => { const E = L.filter(e => e.cat === c); return E.length ? <React.Fragment key={c}>
+      <h2 className="sec" style={{ marginTop: 8 }}>{l}</h2>
+      <List>{E.map(e => <Row key={e.id} title={e.label} sub={e.uni ? 'unilatéral (par côté)' : null} value={e.id === value ? '✓' : ''} chev={false} onClick={() => onPick(e.id, '')} />)}</List>
+    </React.Fragment> : null })}
+    {q.trim() && <List><Row icon="plus" color="#30d158" title={'Exercice libre « ' + q.trim() + ' »'} sub="Pas dans la liste ? Créez-le avec ce nom" onClick={() => onPick('free', q.trim())} /></List>}
+    {!L.length && !q.trim() && <Empty>Aucun exercice.</Empty>}
+  </Sheet>
 }
 function PainWarn({ ex, zones, onSwap }) {
   const h = hits(ex, zones); if (!h.length) return null
@@ -67,23 +94,23 @@ function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
   const e = EX[b.ex] || {}, strength = STRENGTH.includes(e.cat), sets = Math.max(1, +b.sets || 1)
   const per = !!b.setTargets
   const setKeys = (e.m || []).filter(k => k !== 'time' || !strength).filter(k => k !== 'rounds')
-  const swap = ex => onChange({ ...b, ex, target: defaultTarget(ex), setTargets: undefined })
+  const swap = (ex, name = '') => onChange({ ...b, ex, name, target: defaultTarget(ex), setTargets: undefined })
   return <div className="row stack">
-    <div className="row-gap"><b className="num faint">{i + 1}</b><ExSelect value={b.ex} onChange={swap} /><Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
+    <div className="row-gap"><b className="num faint">{i + 1}</b><ExSelect value={b.ex} name={b.name} onChange={swap} /><Tools i={i} n={n} onMove={onMove} onDel={onDel} /></div>
     {b.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice (ex. gainage latéral)" value={b.name} onChange={ev => onChange({ ...b, name: ev.target.value })} />}
     <PainWarn ex={b.ex} zones={zones} onSwap={swap} />
     {!per && <TargetFields key={b.ex} ex={b.ex} target={b.target || {}} strength={strength} onChange={t => onChange({ ...b, target: t })} />}
     {per && <div className="glass" style={{ borderRadius: 10, padding: 6 }}>
       {Array.from({ length: sets }, (_, k) => { const t = { ...b.target, ...(b.setTargets[k] || {}) }; return <div key={k + b.ex} className="row-gap small" style={{ gap: 6, marginBottom: 4 }}>
         <span className="faint num" style={{ width: 52 }}>Série {k + 1}</span>
-        {setKeys.map(key => <input key={key} style={{ ...inp, width: 0, flex: 1 }} inputMode={key === 'time' ? 'text' : 'decimal'} placeholder={METRICS[key][1]} aria-label={METRICS[key][0] + ' série ' + (k + 1)} defaultValue={fmtVal(key, t[key])}
+        {setKeys.map(key => <input key={key} style={{ ...inp, width: 0, flex: 1 }} {...(key === 'time' ? TIME : { inputMode: 'decimal' })} placeholder={METRICS[key][1]} aria-label={METRICS[key][0] + ' série ' + (k + 1)} defaultValue={fmtVal(key, t[key])}
           onBlur={ev => { const v = readVal(key, ev.target.value); if (v === undefined) return; const st = [...b.setTargets]; st[k] = { ...(st[k] || {}), [key]: v }; onChange({ ...b, setTargets: st }) }} />)}
       </div> })}
       <div className="tiny faint">Pyramide, séries dégressives… chaque série a son objectif ({setKeys.map(k => METRICS[k][1]).join(', ')}).</div>
     </div>}
     <div className="row-gap small">
       <span>Séries</span><input style={{ ...inp, width: 44 }} inputMode="numeric" value={b.sets} onChange={ev => onChange({ ...b, sets: ev.target.value, setTargets: b.setTargets ? Array.from({ length: Math.max(1, +ev.target.value || 1) }, (_, k) => b.setTargets[k] || {}) : undefined })} />
-      <span>Récup</span><input style={{ ...inp, width: 56 }} inputMode="text" defaultValue={fmt(b.rest)} onBlur={ev => { const v = parseT(ev.target.value); onChange({ ...b, rest: Number.isNaN(v) || v == null ? 0 : v }) }} />
+      <span>Récup</span><input style={{ ...inp, width: 56 }} {...TIME} defaultValue={fmt(b.rest)} onBlur={ev => { const v = parseT(ev.target.value); onChange({ ...b, rest: Number.isNaN(v) || v == null ? 0 : v }) }} />
       {strength && <><span>Tempo</span><input style={{ ...inp, width: 64 }} placeholder="3-1-1" value={b.tempo || ''} onChange={ev => onChange({ ...b, tempo: ev.target.value })} title="Descente – pause – montée, en secondes" /></>}
       {sets > 1 && <label className="row-gap tiny" style={{ gap: 4 }}><input type="checkbox" checked={per} onChange={ev => onChange({ ...b, setTargets: ev.target.checked ? Array.from({ length: sets }, () => ({ ...b.target })) : undefined })} />Séries différentes</label>}
       {duo && <WhoSeg b={b} names={names} onChange={onChange} />}
@@ -95,7 +122,7 @@ function BlockEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
 function GroupEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
   const F = FORMATS[b.fmt] || {}, timed = b.fmt === 'tabata' || b.fmt === 'interval'
   const setItem = (j, it) => onChange({ ...b, items: b.items.map((x, k) => k === j ? it : x) })
-  const P = ({ label, k, time, w = 52 }) => <><span>{label}</span><input style={{ ...inp, width: w }} inputMode={time ? 'text' : 'numeric'} defaultValue={time ? fmt(b[k]) : b[k]} key={b.fmt + k}
+  const P = ({ label, k, time, w = 52 }) => <><span>{label}</span><input style={{ ...inp, width: w }} {...(time ? TIME : { inputMode: 'numeric' })} defaultValue={time ? fmt(b[k]) : b[k]} key={b.fmt + k}
     onBlur={ev => { const v = time ? parseT(ev.target.value) : num(ev.target.value, b[k]); onChange({ ...b, [k]: Number.isNaN(v) || v == null ? b[k] : v }) }} /></>
   return <div className="row stack" style={{ background: 'var(--accent-soft)', borderLeft: '3px solid var(--accent)' }}>
     <div className="row-gap"><b className="num faint">{i + 1}</b>
@@ -110,7 +137,7 @@ function GroupEditor({ b, i, n, duo, names, zones, onChange, onMove, onDel }) {
       {duo && <WhoSeg b={b} names={names} onChange={onChange} />}
     </div>
     {b.items.map((it, j) => <div key={j} style={{ paddingLeft: 10, borderLeft: '1px dashed var(--sep)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div className="row-gap"><span className="tiny faint">{String.fromCharCode(97 + j)}.</span><ExSelect value={it.ex} onChange={ex => setItem(j, { ...it, ex, target: defaultTarget(ex, true) })} />
+      <div className="row-gap"><span className="tiny faint">{String.fromCharCode(97 + j)}.</span><ExSelect value={it.ex} name={it.name} onChange={(ex, name = '') => setItem(j, { ...it, ex, name, target: defaultTarget(ex, true) })} />
         <button className="icon-btn" aria-label="Retirer l’exercice du bloc" disabled={b.items.length < 2} onClick={() => onChange({ ...b, items: b.items.filter((_, k) => k !== j) })} style={{ width: 30, height: 30 }}><Icon name="close" size={14} /></button></div>
       {it.ex === 'free' && <input style={inp} placeholder="Nom de l’exercice" value={it.name} onChange={ev => setItem(j, { ...it, name: ev.target.value })} />}
       <PainWarn ex={it.ex} zones={zones} onSwap={ex => setItem(j, { ...it, ex, target: defaultTarget(ex, true) })} />
@@ -144,7 +171,7 @@ export function NewCustom() {
   const pre = useMemo(() => { try { const pf = JSON.parse(localStorage.getItem('hx-prefill') || 'null'); if (pf) { localStorage.removeItem('hx-prefill'); return Array.isArray(pf) ? { blocks: pf } : pf } } catch {} const t = q.get('tpl') && LIB[q.get('tpl')]; return t ? { blocks: t.blocks, title: t.name } : null }, [])
   const [f, setF] = useState({ title: (pre && pre.title) || '', format: 'solo', team: mine[0] ? mine[0].id : '', date: q.get('date') || (pre && pre.date) || todayISO(), keeper: null })
   const [blocks, setBlocks] = useState(() => (pre && pre.blocks && pre.blocks.length) ? pre.blocks : [newBlock('run'), newBlock('ski'), newBlock('wb')])
-  const [err, setErr] = useState(''), [lib, setLib] = useState(false), [adding, setAdding] = useState(false)
+  const [err, setErr] = useState(''), [lib, setLib] = useState(q.get('lib') === '1'), [adding, setAdding] = useState(false)
   const team = f.format === 'duo' ? mine.find(t => t.id === f.team) : null
   const names = team ? { A: slotName(team, 'A'), B: slotName(team, 'B') } : { A: profile.display_name, B: '' }
   const upd = (i, b) => setBlocks(L => L.map((x, k) => k === i ? b : x))
@@ -167,8 +194,8 @@ export function NewCustom() {
         name: f.title.trim() || 'Séance du ' + frDate(f.date).slice(0, 5), athletes: team ? slotsOf(team) : { A: user.id, B: null },
         names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: { ...emptyCustom(bl, f.title.trim()), ...(q.get('plan') ? { planDay: q.get('plan') } : {}) } })
       await reload(['sessions'])
-      if (mode === 'plan') { toast('Séance planifiée le ' + frDate(f.date)); location.hash = q.get('back') || '#/seances' }
-      else location.hash = '#/seance/' + s.id + (mode === 'live' ? '/chrono' : '/temps')
+      if (mode === 'plan') { toast('Séance planifiée le ' + frDate(f.date)); go(q.get('back') || '#/seances', true) }
+      else go('#/seance/' + s.id + (mode === 'live' ? '/chrono' : '/temps'), true)
     } catch (e) { setErr(e.message) }
   }
   return <Page back={q.get('back') || '#/seances'} title="Séance personnalisée" subtitle="Renfo, course, ateliers, circuits… avec vos objectifs. Planifiez-la ou lancez-la tout de suite.">
@@ -266,7 +293,8 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
           <div className="pad" style={{ marginTop: 10 }}><button className="btn red full" onClick={() => { const x = cl(); x.steps[cur].e = rel(); commit(x) }}>Terminé<small>enregistrer le temps</small></button></div>
         </>}
       </> : <div className="center"><div className="cur">Séance terminée</div><div className="cur-sub">Durée totale {fmt(customSummary(s).total)}</div>
-        <a className="btn" href={'#/seance/' + s.id + (keeperOnly ? '/temps' : '/stats')}>{keeperOnly ? 'Voir les résultats' : 'Voir l’analyse'}</a></div>}
+        <a className="btn" href={'#/seance/' + s.id + (keeperOnly ? '/temps' : '/stats')}>{keeperOnly ? 'Voir les résultats' : 'Voir l’analyse'}</a>
+        {!keeperOnly && <div className="row-gap" style={{ marginTop: 8, justifyContent: 'center' }}><a className="btn glass small" href="#/moi/programme"><Icon name="cal" size={14} />Programme</a><a className="btn glass small" href="#/moi/etirements"><Icon name="leaf" size={14} />Étirements</a><a className="btn glass small" href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a></div>}</div>}
     </div>
     {pendingDone >= 0 && <div className="glass card"><div className="small" style={{ marginBottom: 6 }}><b>{stepLabel(steps[pendingDone])}</b> en {fmt(doneOf(steps[pendingDone]).time)} : qu’avez-vous réalisé ?</div>
       <DoneForm key={pendingDone} st={steps[pendingDone]} compact onSave={v => { const x = cl(); x.steps[pendingDone].done = v; commit(x) }} /></div>}
@@ -291,7 +319,7 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
       <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
-        <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Temps réalisé (mm:ss)<input style={inp} defaultValue={dn.time != null ? fmt(dn.time) : ''} onBlur={e => { const v = parseT(e.target.value); if (!Number.isNaN(v)) setDone(i, { ...(x.done || {}), time: v }) }} /></label>
+        <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Temps réalisé<input style={inp} {...TIME} defaultValue={dn.time != null ? fmt(dn.time) : ''} onBlur={e => { const v = parseT(e.target.value); if (!Number.isNaN(v)) setDone(i, { ...(x.done || {}), time: v }) }} /></label>
         <DoneForm st={x} onSave={v => { setDone(i, { ...v, time: (x.done && x.done.time) ?? (dn.time ?? null) }); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>

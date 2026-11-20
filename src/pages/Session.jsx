@@ -51,7 +51,7 @@ export default function SessionPage({ id, tab = 'chrono' }) {
   const custom = isCustom(s)
   const T = custom ? [['chrono', 'Chrono'], ['temps', 'Réalisé'], ['cardio', 'Cardio'], ['stats', 'Analyse'], ['coach', 'Coach']] : TABS
   const tabs = keeperOnly ? T.filter(([k]) => k === 'chrono' || k === 'temps') : T
-  const go = t => { location.hash = '#/seance/' + id + '/' + t }
+  const go = t => { window.__hxReplace = true; location.replace('#/seance/' + id + '/' + t) }
 
   return <Page back="#/seances" title={tab === 'chrono' ? null : s.name} subtitle={tab === 'chrono' ? null : `${frDate(s.session_date)} · ${KIND[s.kind]}${team ? ' · ' + team.name : duo ? ' · duo' : ' · solo'}`}>
     <Seg value={tab} onChange={go} options={tabs} />

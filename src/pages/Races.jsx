@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, maskT } from '../ui.jsx'
 import { fmt, parseT, frDate, daysUntil, todayISO } from '../lib/hyrox.js'
 import { RACE_TYPE, activeTeams, mainRace, upcoming, PRIORITY, teamName } from './common.js'
 
@@ -53,8 +53,8 @@ function RaceSheet({ race, onClose }) {
       <Field label="Date"><input type="date" value={f.race_date} onChange={set('race_date')} /></Field>
       <Field label="Catégorie"><select value={f.category || ''} onChange={set('category')}><option value="homme">Homme</option><option value="femme">Femme</option><option value="mixte">Mixte</option></select></Field>
       {f.format === 'duo' && <Field label="Équipe" sub={mine.length ? '' : 'Créez d’abord une équipe'}><select value={f.team_id || ''} onChange={set('team_id')}><option value="">—</option>{mine.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>}
-      <Field label="Objectif" sub="h:mm:ss"><input inputMode="numeric" value={f.goal} onChange={set('goal')} placeholder="1:25:00" /></Field>
-      <Field label="Résultat" sub="Après la course"><input inputMode="numeric" value={f.result} onChange={set('result')} placeholder="—" /></Field>
+      <Field label="Objectif" sub="h:mm:ss"><input inputMode="numeric" value={f.goal} onChange={e => setF({ ...f, goal: maskT(e.target.value) })} placeholder="1:25:00" /></Field>
+      <Field label="Résultat" sub="Après la course"><input inputMode="numeric" value={f.result} onChange={e => setF({ ...f, result: maskT(e.target.value) })} placeholder="—" /></Field>
       <div className="row stack"><span className="small muted">Notes</span><textarea value={f.notes || ''} onChange={set('notes')} placeholder="Vague de départ, hôtel…" /></div>
     </List>
     {err && <p className="err">{err}</p>}

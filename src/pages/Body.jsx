@@ -19,6 +19,7 @@ export function Pains() {
     <div className="note small" style={{ marginTop: 0 }}>L’app ne pose pas de diagnostic. Elle vous indique les mouvements qui sollicitent la zone, adapte le programme et vous dit quand consulter un médecin ou un kiné.</div>
     <button className="btn block" onClick={() => setOpen(true)}><Icon name="plus" size={18} />Déclarer une douleur</button>
     {act.length === 0 && <div className="glass card" style={{ marginTop: 12 }}><Empty icon="heart">Aucune douleur en cours.</Empty></div>}
+    {act.length > 0 && <div className="row-gap" style={{ marginTop: 10 }}><a className="btn glass small" style={{ flex: 1 }} href="#/moi/programme"><Icon name="cal" size={14} />Programme adapté</a><a className="btn glass small" style={{ flex: 1 }} href="#/moi/etirements"><Icon name="leaf" size={14} />Étirements</a></div>}
     {act.map(p => <PainCard key={p.id} p={p} onResolve={() => resolve(p)} onLevel={v => level(p, v)} />)}
     {old.length > 0 && <Sec title="Douleurs passées"><List>{old.map(p => <Row key={p.id} title={ZONE[p.data.zone] + (p.data.side ? ' ' + p.data.side : '')} sub={`${frDate(p.data.since || p.day)} → ${p.data.resolvedOn ? frDate(p.data.resolvedOn) : '?'} · max ${p.data.level}/10`}>
       <button className="icon-btn" aria-label="Supprimer" onClick={async () => { if (confirm('Supprimer ?')) { await api.journal.remove(p.id); j.reload() } }}><Icon name="trash" size={16} /></button></Row>)}</List></Sec>}

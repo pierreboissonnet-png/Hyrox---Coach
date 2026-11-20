@@ -22,13 +22,25 @@ export function Me() {
   const { profile, races } = useApp()
   const next = upcoming(races)[0]
   return <Page title="Moi" subtitle={`${profile.display_name} · ${profile.sex === 'F' ? 'Femme' : profile.sex === 'M' ? 'Homme' : 'Autre'} · ${new Date().getFullYear() - profile.birth_year} ans · ${profile.weight_kg} kg`}>
-    <Sec title="Objectifs personnels">
+    <Sec title="Entraînement">
       <List>
-        <Row icon="cal" color="#5e5ce6" title="Programme d’entraînement" sub={next ? 'Vers ' + next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
-        <Row icon="leaf" color="#30d158" title="Coach nutrition" sub="Besoins du jour et jour de course" href="#/moi/nutrition" />
-        <Row icon="pill" color="#ff9f0a" title="Compléments" sub="Ce qui est prouvé, doses, précautions" href="#/moi/complements" />
-        <Row icon="heart" color="#ff375f" title="Santé" sub={'Sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle et hormones' : '') + ', forme, douleurs'} href="#/moi/sante" />
+        <Row icon="cal" color="#5e5ce6" title="Programme jusqu’à la course" sub={next ? next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
+        <Row icon="bolt" color="#bf5af2" title="Bibliothèque de séances" sub="Séances types et mes modèles, à lancer ou planifier" href="#/seance/specifique?lib=1" />
+        <Row icon="timer" color="#0a84ff" title="Mes séances" sub="Historique, séances prévues, activités" href="#/seances" />
         <Row icon="leaf" color="#64d2ff" title="Étirements et mobilité" sub="Routines minutées, banque par zone" href="#/moi/etirements" />
+      </List>
+    </Sec>
+    <Sec title="Santé et forme">
+      <List>
+        <Row icon="spark" color="#30d158" title="Forme du jour" sub="Fatigue, sommeil, courbatures : adapte le programme" href="#/moi/sante?t=forme" />
+        <Row icon="heart" color="#ff9f0a" title="Douleurs" sub="Mouvements à éviter, programme adapté" href="#/moi/sante?t=douleurs" />
+        <Row icon="moon" color="#ff375f" title="Santé" sub={'Sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle' : '')} href="#/moi/sante" />
+      </List>
+    </Sec>
+    <Sec title="Nutrition">
+      <List>
+        <Row icon="leaf" color="#30d158" title="Coach nutrition" sub="Mon alimentation, besoins du jour, jour de course" href="#/moi/nutrition" />
+        <Row icon="pill" color="#ff9f0a" title="Compléments" sub="Ce qui est prouvé, doses, précautions" href="#/moi/complements" />
       </List>
     </Sec>
     <Sec title="Compte">
@@ -132,8 +144,6 @@ function DietCoach({ T }) {
     <div className="row-gap" style={{ marginBottom: 8 }}><span className="badge accent">{(DIETS.find(x => x[0] === diet.type) || [])[1]}</span><span className="small muted">mis à jour le {frDate(saved.day)}</span><span className="spacer" /><button className="btn glass small" onClick={() => setEdit(true)}>Modifier</button></div>
     {T && T.list.length > 0 && <TodayCard T={T} />}
     <Seg value={day} onChange={setDay} options={DAY_TYPES.map(x => [x.id, x.label])} />
-    <h2 className="sec">Recommandations</h2>
-    <List>{R.map((r, i) => <div className="row stack" key={i}><div className="row-gap"><span className={'badge ' + REC_STYLE[r.type][1]}>{REC_STYLE[r.type][0]}</span><b style={{ flex: 1, minWidth: 0 }}>{r.text}</b></div><span className="small muted">{r.why}</span></div>)}</List>
     <h2 className="sec">Apports estimés par jour</h2>
     <div className="glass card">{G.map(g => { const pct = Math.min(1.5, g.ratio), col = g.k === 'kcal' ? (g.ratio < 0.85 || g.ratio > 1.15 ? 'var(--warn)' : 'var(--good)') : g.ratio < 0.7 ? 'var(--bad)' : g.ratio < 0.9 ? 'var(--warn)' : 'var(--good)'
       return <div key={g.k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 104px', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 14 }}>
@@ -141,6 +151,8 @@ function DietCoach({ T }) {
         <span style={{ position: 'relative', height: 10, background: 'var(--fill)', borderRadius: 99 }}><span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (pct / 1.5 * 100) + '%', background: col, borderRadius: 99 }} /><span style={{ position: 'absolute', left: (100 / 1.5) + '%', top: -3, bottom: -3, width: 1.5, background: 'var(--ink-3)' }} /></span>
         <span className="num small" style={{ textAlign: 'right' }}>{Math.round(g.have)} / {Math.round(g.need)} {g.unit}</span></div> })}
       <p className="small muted" style={{ marginBottom: 0 }}>Le trait vertical marque le besoin estimé ({DAY_TYPES.find(x => x.id === day).label.toLowerCase()}). Estimations à partir de portions moyennes : un ordre de grandeur, pas une pesée.</p></div>
+    <h2 className="sec">Recommandations</h2>
+    <List>{R.map((r, i) => <div className="row stack" key={i}><div className="row-gap"><span className={'badge ' + REC_STYLE[r.type][1]}>{REC_STYLE[r.type][0]}</span><b style={{ flex: 1, minWidth: 0 }}>{r.text}</b></div><span className="small muted">{r.why}</span></div>)}</List>
     <p className="foot">Repères ANSES et recommandations pour sportifs. Pour un suivi personnalisé (perte de poids, troubles digestifs, grossesse, pathologie), consultez un(e) diététicien(ne) du sport.</p>
   </>
 }
@@ -365,6 +377,7 @@ function Wellbeing() {
     <List>{Object.entries(L).map(([k, [l, names]]) => <div className="row stack" key={k}><div className="row-gap"><span>{l}</span><span className="spacer" /><b>{names[v[k]]}</b><span className="num small muted">{v[k]}/5</span></div>
       <input type="range" min="0" max="5" step="1" value={v[k]} onChange={e => setV({ ...v, [k]: +e.target.value })} aria-label={l} aria-valuetext={names[v[k]]} /><div className="row-gap tiny faint"><span>0 · {names[0].toLowerCase()}</span><span className="spacer" /><span>5 · {names[5].toLowerCase()}</span></div></div>)}</List>
     <button className="btn block" style={{ marginTop: 12 }} onClick={save}>{todayRow ? 'Mettre à jour la forme du jour' : 'Enregistrer la forme du jour'}</button>
+    {todayRow && <a className="btn glass block" style={{ marginTop: 8 }} href="#/moi/programme"><Icon name="cal" size={16} />Voir le programme du jour</a>}
     <p className="foot">Effet sur le programme : une fatigue ou des courbatures à 4–5 (ou un sommeil à 0–1) transforment seulement la séance intense d’aujourd’hui ou de demain en endurance facile ; à 3 (ou sommeil à 2), le volume baisse d’environ 20 %. La semaine entière n’est allégée que si la moyenne des 5 derniers jours (au moins 3 saisies) reste haute.</p>
     <JournalList items={j.data} render={e => { const w = wellNorm(e); return `Fatigue ${lbl('fatigue', w.fatigue)} · sommeil ${lbl('sleep', w.sleep)} · courbatures ${lbl('soreness', w.soreness)} · moral ${lbl('mood', w.mood)}` }} onDel={j.reload} />
   </>

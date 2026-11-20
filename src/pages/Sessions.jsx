@@ -101,7 +101,7 @@ export function NewSession() {
         athletes, data: emptyData(+f.runKm || plan.runKm), plan: team ? plan : null,
         names: { A: nm('A'), B: team ? nm('B') : null, ...(keeperName ? { keeper: keeperName } : {}) }, timekeeper: f.keeper,
       })
-      await reload(['sessions']); toast(f.keeper ? `${keeperName} peut enregistrer vos temps` : 'Séance créée'); location.hash = '#/seance/' + s.id + '/chrono'
+      await reload(['sessions']); toast(f.keeper ? `${keeperName} peut enregistrer vos temps` : 'Séance créée'); window.__hxReplace = true; location.replace('#/seance/' + s.id + '/chrono')
     } catch (e) { setErr(e.message) }
   }
   return <Page back="#/seances" title="Nouvelle séance">

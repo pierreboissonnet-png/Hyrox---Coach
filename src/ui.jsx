@@ -36,9 +36,24 @@ export function Icon({ name, size = 22, stroke = 1.8, style, className }) {
   return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" style={style} className={className} aria-hidden="true">{P[name]}</svg>
 }
 
+// ---------- navigation : « Retour » ramène à l'écran d'où l'on vient (sinon à l'écran parent) ----------
+const NAV_KEY = 'hx-nav'
+const navStack = () => { try { return JSON.parse(sessionStorage.getItem(NAV_KEY) || '[]') } catch { return [] } }
+const setStack = st => { try { sessionStorage.setItem(NAV_KEY, JSON.stringify(st.slice(-40))) } catch {} }
+/** À appeler à chaque changement d'écran */
+export function trackNav(hash) {
+  const st = navStack()
+  if (window.__hxReplace) { window.__hxReplace = false; st[st.length ? st.length - 1 : 0] = hash }
+  else if (st.length >= 2 && st[st.length - 2] === hash) st.pop()
+  else if (st[st.length - 1] !== hash) st.push(hash)
+  setStack(st)
+}
+/** Changer d'écran ; replace = sans créer d'étape dans l'historique (onglets, après une création…) */
+export function go(hash, replace) { if (replace) { window.__hxReplace = true; location.replace(hash) } else location.hash = hash }
+function goBack(e, fallback) { const st = navStack(); if (st.length >= 2) { e.preventDefault(); history.back() } else if (!fallback) e.preventDefault() }
 export function Nav({ back, title, actions }) {
   return <div className="nav">
-    {back && <a className="back glass" href={back}><Icon name="back" size={20} stroke={2.2} />Retour</a>}
+    {back && <a className="back glass" href={back} onClick={e => goBack(e, back)}><Icon name="back" size={20} stroke={2.2} />Retour</a>}
     <div className="actions">{actions}<button className="icon-btn glass bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème"><Icon name="bug" size={20} /></button></div>
   </div>
 }
@@ -90,6 +105,16 @@ export function Sheet({ title, onClose, children, actions, footer, noBug }) {
     </div>
   </div>
 }
+/**
+ * Saisie des temps au pavé numérique (sans « : » sur iPhone) : on tape les chiffres, les « : » se placent seuls.
+ * 130 → 1:30 · 10500 → 1:05:00. Le « : » tapé à la main est aussi accepté.
+ */
+export function maskT(v) {
+  const d = String(v || '').replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, 6)
+  return d.length <= 2 ? d : d.length <= 4 ? d.slice(0, -2) + ':' + d.slice(-2) : d.slice(0, -4) + ':' + d.slice(-4, -2) + ':' + d.slice(-2)
+}
+/** À étaler sur un <input> non contrôlé : {...TIME} */
+export const TIME = { inputMode: 'numeric', autoComplete: 'off', placeholder: 'm:ss', onInput: e => { e.target.value = maskT(e.target.value) } }
 /** Nombre saisi au clavier (virgule ou point) ; null si vide ou invalide */
 export const parseNum = v => { if (v == null || String(v).trim() === '') return null; const n = +String(v).trim().replace(/\s/g, '').replace(',', '.'); return Number.isFinite(n) ? n : null }
 export const Empty = ({ icon = 'spark', children }) => <div className="empty"><Icon name={icon} />{children}</div>
