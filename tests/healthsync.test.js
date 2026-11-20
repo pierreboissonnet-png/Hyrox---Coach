@@ -43,3 +43,33 @@ test('rattachement à une séance', () => {
   const s = L.sessionSeries([{ day: d, ...m }], st, st + 200000)
   assert.equal(s.t[0], -30); assert.ok(s.t.includes(0)); assert.equal(s.bpm[s.t.indexOf(0)], 106)
 })
+
+test('autres données : mesures, poids, règles, entraînements', () => {
+  const hae = { data: { metrics: [
+    { name: 'weight_body_mass', units: 'kg', data: [{ date: '2026-11-18 07:10:00 +0100', qty: 79.4 }, { date: '2026-11-19 07:05:00 +0100', qty: 79.1 }] },
+    { name: 'body_fat_percentage', units: '%', data: [{ date: '2026-11-19 07:05:00 +0100', qty: 0.17 }] },
+    { name: 'resting_heart_rate', units: 'count/min', data: [{ date: '2026-11-19 00:00:00 +0100', qty: 52 }] },
+    { name: 'heart_rate_variability', units: 'ms', data: [{ date: '2026-11-19 03:00:00 +0100', qty: 60 }, { date: '2026-11-19 05:00:00 +0100', qty: 70 }] },
+    { name: 'step_count', units: 'count', data: [{ date: '2026-11-19 10:00:00 +0100', qty: 4000 }, { date: '2026-11-19 18:00:00 +0100', qty: 3500 }] },
+    { name: 'active_energy', units: 'kJ', data: [{ date: '2026-11-19 18:00:00 +0100', qty: 2092 }] },
+    { name: 'menstrual_flow', units: '', data: [{ date: '2026-11-02', value: 'Medium' }, { date: '2026-11-03', value: 'Light' }, { date: '2026-11-04', value: 'None' }, { date: '2026-11-30', value: 'Heavy' }] },
+  ], workouts: [{ name: 'Outdoor Run', start: '2026-11-19 18:00:00 +0100', end: '2026-11-19 18:42:00 +0100', distance: { qty: 8.1, units: 'km' }, activeEnergyBurned: { qty: 520, units: 'kcal' } }] } }
+  const M = L.extractMetrics(hae), V = L.vitalsByDay(M, 60)
+  assert.equal(V['2026-11-19'].weight, 79.1); assert.equal(V['2026-11-19'].fat, 17); assert.equal(V['2026-11-19'].rhr, 52)
+  assert.equal(V['2026-11-19'].hrv, 65); assert.equal(V['2026-11-19'].steps, 7500); assert.equal(V['2026-11-19'].kcal, 500)
+  assert.deepEqual(L.periods(M, 60), [{ start: '2026-11-02', end: '2026-11-03' }, { start: '2026-11-30', end: '2026-11-30' }])
+  const W = L.extractWorkouts(hae); assert.equal(W.length, 1); assert.equal(W[0].km, 8.1); assert.equal(L.activityOf(W[0].name), 'run')
+  assert.equal(L.activityOf('Functional Strength Training'), 'strength'); assert.equal(L.activityOf('Cycling'), 'bike')
+  // Raccourci
+  const sc = { metrics: { weight: { dates: ['2026-11-19T07:00:00+01:00'], values: ['80,2'] }, rhr: { dates: '2026-11-19T00:00:00+01:00', values: '55' } }, workouts: { names: ['Natation'], starts: ['2026-11-19T12:00:00+01:00'], ends: ['2026-11-19T12:40:00+01:00'], distances: ['1,5'] } }
+  const V2 = L.vitalsByDay(L.extractMetrics(sc), 60); assert.equal(V2['2026-11-19'].weight, 80.2); assert.equal(V2['2026-11-19'].rhr, 55)
+  assert.equal(L.activityOf(L.extractWorkouts(sc)[0].name), 'swim')
+})
+
+test('raccourci « Hyrox Mesures » : clés courtes et valeurs avec unités', () => {
+  const body = { rhr: { dates: '2026-11-19T07:00:00+01:00', values: '54 bpm' }, kcal: { dates: '2026-11-19T12:00:00+01:00\n2026-11-19T18:00:00+01:00', values: '300 kcal\n250 kcal' },
+    vo2: { dates: ['2026-11-10T10:00:00+01:00'], values: ['44,5'] }, steps: { dates: ['2026-11-19T10:00:00+01:00'], values: ['4 000'] }, flow: { dates: ['2026-11-18', '2026-11-19'], values: ['Moyen', 'Léger'] } }
+  const M = L.extractMetrics(body), V = L.vitalsByDay(M, 60)
+  assert.equal(V['2026-11-19'].rhr, 54); assert.equal(V['2026-11-19'].kcal, 550); assert.equal(V['2026-11-19'].steps, 4000); assert.equal(V['2026-11-10'].vo2, 44.5)
+  assert.equal(L.periods(M, 60).length, 1)
+})

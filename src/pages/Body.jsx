@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, useLoad } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, useLoad, Chips } from '../ui.jsx'
 import { todayISO, frDate, fmt } from '../lib/hyrox.js'
 import { EXERCISES } from '../lib/custom.js'
 import { ZONES, ZONE, WHEN, ADVICE, isActive, redFlags, PAIN_RULE, hits, altFor } from '../lib/pain.js'
@@ -79,7 +79,7 @@ export function StretchPage() {
   return <Page back="#/moi" title="Étirements" subtitle="Routines minutées et banque de positions. Sans douleur, respiration lente, pas d’à-coups.">
     <Sec title="Routines"><List>{ROUTINES.map(r => <Row key={r.id} icon="play" color="#30d158" title={r.name} sub={r.desc} value={Math.round(routineSec(r.items) / 60) + ' min'} onClick={() => setPlay(r)} />)}</List></Sec>
     <h2 className="sec">Banque</h2>
-    <div style={{ overflowX: 'auto', margin: '0 -16px', padding: '0 16px' }}><div className="seg" style={{ width: 'max-content', flexWrap: 'nowrap' }}>{[['all', 'Tout'], ...zonesUsed].map(([k, l]) => <button key={k} aria-pressed={zone === k} onClick={() => setZone(k)} style={{ whiteSpace: 'nowrap' }}>{l}</button>)}</div></div>
+    <Chips value={zone} onChange={setZone} label="Zones" options={[['all', 'Tout'], ...zonesUsed]} />
     <List>{list.map(s => <React.Fragment key={s.id}><Row title={s.name} sub={s.zones.map(z => ZONE[z]).join(', ') + (s.dyn ? ' · mobilité' : s.roll ? ' · rouleau' : '')} value={s.sec + ' s' + (s.side ? ' ×2' : '')} onClick={() => setOpenId(openId === s.id ? null : s.id)} />
       {openId === s.id && <div className="row stack" style={{ background: 'var(--fill)' }}><span className="small">{s.how}</span><button className="btn tinted small" style={{ alignSelf: 'flex-start' }} onClick={() => setPlay({ id: s.id, name: s.name, items: [s.id] })}><Icon name="play" size={14} />Minuter</button></div>}
     </React.Fragment>)}</List>

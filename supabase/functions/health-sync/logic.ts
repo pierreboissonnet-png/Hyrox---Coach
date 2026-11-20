@@ -108,3 +108,101 @@ export function sessionSeries(days: { day: string; t: number[]; bpm: number[] }[
   const m = new Map<number, number>(); pts.forEach(([ms, v]) => m.set(Math.round((ms - startMs) / 1000), v))
   const t = [...m.keys()].sort((a, b) => a - b); return { t, bpm: t.map(k => m.get(k) as number) }
 }
+
+// ------------------------------------------------------------------ autres données de Santé
+// Mesures du jour : poids, masse grasse, FC au repos, VFC, VO2max, pas, énergie active, fréquence respiratoire, règles
+export type Metrics = Record<string, Sample[]>
+const ALIASES: Record<string, string[]> = {
+  weight: ['weight_body_mass', 'body_mass', 'weight', 'poids'], fat: ['body_fat_percentage', 'body_fat', 'masse_grasse', 'fat'],
+  rhr: ['resting_heart_rate', 'rhr', 'fc_repos'], hrv: ['heart_rate_variability', 'heart_rate_variability_sdnn', 'hrv', 'vfc'],
+  vo2: ['vo2_max', 'vo2max', 'vo2'], steps: ['step_count', 'steps', 'pas'], kcal: ['active_energy', 'active_energy_burned', 'active_kcal', 'energie_active', 'kcal'],
+  resp: ['respiratory_rate', 'frequence_respiratoire'], flow: ['menstrual_flow', 'menstruation', 'regles', 'flow'],
+}
+const keyOf = (name: string) => { const n = name.toLowerCase().replace(/[\s-]+/g, '_'); return Object.keys(ALIASES).find(k => ALIASES[k].includes(n)) || null }
+/** Valeur ramenée à l'unité de l'app (kg, %, bpm, ms, mL/kg/min, pas, kcal) */
+function conv(key: string, v: number, unit = '') {
+  const u = unit.toLowerCase()
+  if (key === 'weight' && /lb/.test(u)) return v * 0.45359237
+  if (key === 'kcal' && /kj/.test(u)) return v / 4.184
+  if (key === 'fat' && v > 0 && v <= 1) return v * 100
+  return v
+}
+const flowVal = (v: unknown) => { const s = String(v ?? '').toLowerCase(); if (/none|aucun|^0$/.test(s)) return 0; const n = num(v); return n != null ? n : s ? 1 : 0 }
+export function extractMetrics(body: any): Metrics {
+  const out: Metrics = {}
+  const push = (k: string, t: number | null, v: number | null) => { if (t == null || v == null || !isFinite(v)) return; (out[k] = out[k] || []).push([t, v]) }
+  const metrics = body && body.data && Array.isArray(body.data.metrics) ? body.data.metrics : null
+  if (metrics) {
+    for (const mt of metrics) {
+      const k = keyOf(String(mt.name || '')); if (!k) continue
+      for (const d of mt.data || []) {
+        const t = parseDate(d.date ?? d.startDate)
+        if (k === 'flow') { if (flowVal(d.value ?? d.qty) > 0) push(k, t, 1); continue }
+        const v = num(d.qty ?? d.Avg ?? d.avg ?? d.value); push(k, t, v == null ? null : conv(k, v, mt.units))
+      }
+    }
+    return out
+  }
+  // Raccourci : {metrics: {weight: {dates, values, unit?}, …}} ou directement {weight: {dates, values}}
+  const src = body && typeof body.metrics === 'object' && !Array.isArray(body.metrics) ? body.metrics : body || {}
+  for (const name of Object.keys(src)) {
+    const k = keyOf(name), M = src[name]; if (!k || !M || typeof M !== 'object') continue
+    const ds = list(M.dates), vs = list(M.values)
+    for (let i = 0; i < ds.length; i++) {
+      const t = parseDate(ds[i])
+      if (k === 'flow') { if (flowVal(vs[i] ?? 1) > 0) push(k, t, 1); continue }
+      const v = num(vs[i]); push(k, t, v == null ? null : conv(k, v, M.unit))
+    }
+  }
+  return out
+}
+const dayOf = (t: number, tzMin: number) => new Date(t + tzMin * 6e4).toISOString().slice(0, 10)
+/** Agrégat par jour local : pas et énergie additionnés, poids/VO2 = dernière valeur, FC repos = min, VFC/resp = moyenne */
+export function vitalsByDay(m: Metrics, tzMin = 60) {
+  const days: Record<string, any> = {}
+  const acc: Record<string, Record<string, number[]>> = {}
+  for (const k of Object.keys(m)) for (const [t, v] of [...m[k]].sort((a, b) => a[0] - b[0])) { if (k === 'flow') continue; const d = dayOf(t, tzMin); ((acc[d] = acc[d] || {})[k] = acc[d][k] || []).push(v) }
+  for (const d of Object.keys(acc)) {
+    const a = acc[d], o: any = {}, avg = (x: number[]) => x.reduce((p, q) => p + q, 0) / x.length, r1 = (x: number) => Math.round(x * 10) / 10
+    if (a.steps) o.steps = Math.round(a.steps.reduce((p, q) => p + q, 0))
+    if (a.kcal) o.kcal = Math.round(a.kcal.reduce((p, q) => p + q, 0))
+    if (a.rhr) o.rhr = Math.round(Math.min(...a.rhr))
+    if (a.hrv) o.hrv = Math.round(avg(a.hrv))
+    if (a.resp) o.resp = r1(avg(a.resp))
+    if (a.vo2) o.vo2 = r1(a.vo2[a.vo2.length - 1])
+    if (a.weight) o.weight = r1(a.weight[a.weight.length - 1])
+    if (a.fat) o.fat = r1(a.fat[a.fat.length - 1])
+    days[d] = o
+  }
+  return days
+}
+/** Jours de règles consécutifs (1 jour d'écart toléré) → périodes {start, end} */
+export function periods(m: Metrics, tzMin = 60) {
+  const D = [...new Set((m.flow || []).map(([t]) => dayOf(t, tzMin)))].sort()
+  const out: { start: string; end: string }[] = []
+  const gap = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5)
+  for (const d of D) { const last = out[out.length - 1]; if (last && gap(last.end, d) <= 2) last.end = d; else out.push({ start: d, end: d }) }
+  return out
+}
+
+// Entraînements enregistrés par la montre → activités de l'app (si aucune séance chronométrée ne les couvre)
+export type Workout = { name: string; a: number; b: number; km: number | null; kcal: number | null; hr: number | null }
+export function extractWorkouts(body: any): Workout[] {
+  const out: Workout[] = []
+  const W = body && body.data && Array.isArray(body.data.workouts) ? body.data.workouts : null
+  const q = (x: any) => x == null ? null : typeof x === 'object' ? num(x.qty) : num(x)
+  if (W) for (const w of W) {
+    const a = parseDate(w.start), b = parseDate(w.end); if (a == null || b == null || b <= a) continue
+    let km = q(w.distance); const du = String((w.distance && w.distance.units) || '').toLowerCase(); if (km != null && /mi/.test(du)) km *= 1.609; if (km != null && /^m$/.test(du)) km /= 1000
+    let kcal = q(w.activeEnergyBurned ?? w.activeEnergy); if (kcal != null && /kj/.test(String((w.activeEnergyBurned || {}).units || '').toLowerCase())) kcal /= 4.184
+    out.push({ name: String(w.name || 'Entraînement'), a, b, km, kcal, hr: q(w.avgHeartRate ?? w.heartRate?.avg) })
+  }
+  const S = body && body.workouts && !Array.isArray(body.workouts) ? body.workouts : null
+  if (S) { const n = list(S.names), as = list(S.starts), bs = list(S.ends), ks = list(S.distances), cs = list(S.kcal), hs = list(S.avg_hr)
+    for (let i = 0; i < Math.min(as.length, bs.length); i++) { const a = parseDate(as[i]), b = parseDate(bs[i]); if (a != null && b != null && b > a) out.push({ name: String(n[i] ?? 'Entraînement'), a, b, km: num(ks[i]), kcal: num(cs[i]), hr: num(hs[i]) }) } }
+  return out.filter(w => w.b - w.a >= 5 * 6e4)
+}
+const ACT: [RegExp, string][] = [[/run|course|jog/i, 'run'], [/cycl|vélo|velo|bike|spin/i, 'bike'], [/row|aviron|rameur/i, 'row'], [/swim|natation|nage/i, 'swim'], [/hik|rando/i, 'hike'], [/walk|marche/i, 'walk'],
+  [/ellipt/i, 'elliptical'], [/stair|escalier/i, 'stairs'], [/yoga|pilates/i, 'yoga'], [/tennis|padel|squash|badminton|racket|raquette/i, 'racket'], [/soccer|football|basket|hand|rugby|volley|team|collectif/i, 'teamsport'],
+  [/climb|escalade/i, 'climbing'], [/box|martial|kick|combat|judo|karat/i, 'combat'], [/ski|snow|surf des neiges/i, 'winter'], [/strength|renfo|muscu|functional|fonctionnel|cross|hiit|core|training|circuit/i, 'strength']]
+export const activityOf = (name: string) => (ACT.find(([r]) => r.test(name)) || [null, 'other'])[1]

@@ -129,6 +129,9 @@ create table if not exists public.races (
   created_at timestamptz not null default now()
 );
 
+-- Priorité : A = objectif principal (pilote le programme), B = course importante, C = course de préparation
+alter table public.races add column if not exists priority text not null default 'B' check (priority in ('A','B','C'));
+
 -- ---------- Séances (entraînement, simulation, course) ----------
 create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
@@ -443,3 +446,19 @@ exception when others then null; end $$;
 
 -- Pour vous déclarer administrateur (lecture de tous les bugs), après votre inscription :
 --   insert into public.app_admins (user_id) select id from auth.users where email = 'votre@email';
+
+-- =====================================================================
+-- Droits d'accès aux tables pour l'application (Data API)
+-- Les projets Supabase récents n'exposent plus automatiquement les nouvelles tables :
+-- sans ces lignes, l'application affiche « permission denied for table … ».
+-- Les règles RLS ci-dessus continuent de limiter ce que chacun voit.
+-- =====================================================================
+grant usage on schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant all on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to authenticated, service_role;
+grant execute on all functions in schema public to authenticated, service_role;
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public grant all on tables to service_role;
+alter default privileges in schema public grant usage, select on sequences to authenticated, service_role;
+alter default privileges in schema public grant execute on functions to authenticated, service_role;

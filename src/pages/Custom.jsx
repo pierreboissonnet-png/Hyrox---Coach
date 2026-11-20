@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { hasB } from '../lib/session.js'
 import { api } from '../lib/api.js'
-import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, go } from '../ui.jsx'
+import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, go, Chips } from '../ui.jsx'
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone } from '../lib/hyrox.js'
@@ -152,7 +152,7 @@ function LibrarySheet({ tpls, onPick, onDelTpl, onClose }) {
   const [cat, setCat] = useState((tpls || []).length ? 'mine' : 'renfo')
   const L = cat === 'mine' ? (tpls || []).map(t => ({ id: t.id, name: t.data.name, desc: t.data.blocks.map(b => isGroup(b) ? FORMATS[b.fmt].label + ' (' + b.items.map(exLabel).join(', ') + ')' : exLabel(b)).join(' · '), blocks: t.data.blocks, mine: true })) : LIBRARY.filter(t => t.cat === cat)
   return <Sheet title="Bibliothèque de séances" onClose={onClose}>
-    <div className="seg scroll-x" style={{ display: 'flex' }}>{[['mine', 'Mes modèles'], ...LIB_CATS].map(([k, l]) => <button key={k} aria-pressed={cat === k} onClick={() => setCat(k)}>{l}</button>)}</div>
+    <Chips value={cat} onChange={setCat} label="Catégories" options={[['mine', 'Mes modèles'], ...LIB_CATS]} />
     {L.length ? <List>{L.map(t => <div className="row" key={t.id}><span className="label"><span className="t">{t.name}</span><span className="s">{t.desc}</span></span>
       <button className="btn tinted small" onClick={() => onPick(t)}>Choisir</button>
       {t.mine && <button className="icon-btn" aria-label="Supprimer le modèle" onClick={() => onDelTpl(t.id)}><Icon name="trash" size={16} /></button>}</div>)}</List>

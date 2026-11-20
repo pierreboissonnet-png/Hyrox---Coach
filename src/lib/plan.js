@@ -39,6 +39,16 @@ const DRILL = {
 const blk = (o) => ({ name: '', w: 'A', note: '', ...o })
 const quarter = st => STATION[st].u === ' reps' ? { reps: 25 } : { meters: Math.round(STATION[st].tot / 4) }
 
+/** Applique le ressenti : charge progressive vers la charge visée, consignes de technique */
+function withNeed(b, st, ctx) {
+  const S = ctx.self && ctx.self[st]; if (!S || !S.state) return b
+  if (S.state === 'charge' && S.cur && S.target) { const load = Math.min(Math.max(S.cur, S.target), r25(S.cur + (S.target - S.cur) * Math.min(1, (ctx.prog || 0) / 0.75))); return { ...b, target: { ...b.target, load }, note: [b.note, `charge ${String(load).replace('.', ',')} kg (de ${S.cur} vers ${S.target})`].filter(Boolean).join(' · ') } }
+  if (S.state === 'technique') return { ...b, sets: b.sets + 1, note: 'technique d’abord : charge modérée, mouvement propre, filmez-vous' }
+  if (S.state === 'inconnu') return { ...b, note: 'découverte : apprenez le geste à charge légère' }
+  if (S.state === 'vitesse') return { ...b, note: [b.note, 'à allure course ou plus vite'].filter(Boolean).join(' · ') }
+  if (S.state === 'physique') return { ...b, sets: b.sets + 1, rest: Math.max(30, b.rest - 15), note: [b.note, 'récupération courte pour habituer le cardio'].filter(Boolean).join(' · ') }
+  return b
+}
 /** Séance de force : charges calculées sur les 1RM estimés quand ils existent */
 export function forceBlocks(rm = {}, phase, f = 1, avoid = []) {
   const pct = phase === 'affutage' || phase === 'course' ? 0.7 : phase === 'specifique' ? 0.75 : 0.8
@@ -66,13 +76,13 @@ export function blocksFor(key, ctx = {}) {
       : [blk({ ex: 'run', sets: 1, rest: 60, target: { time: 600 }, note: 'échauffement' }), blk({ ex: 'run', sets: sc(5, f), rest: 90, target: { meters: 1000, time: Math.round(pace) }, note: 'allure course Hyrox' })]
     case 'allure': return [blk({ ex: 'run', sets: 1, rest: 60, target: { time: 600 }, note: 'échauffement' }), blk({ ex: 'run', sets: 3, rest: 120, target: { meters: 2000, time: Math.round(pace * 2) }, note: 'allure course : objectif de régularité' })]
     case 'force': return forceBlocks(ctx.e1rm, ctx.phase, f)
-    case 'ateliers': return focus.slice(0, 3).map(st => blk(DRILL[st](f)))
+    case 'ateliers': return focus.slice(0, 3).map(st => withNeed(blk(DRILL[st](f)), st, ctx))
     case 'compromis': {
       const a = focus[0], b = focus[1] || (a === 'wb' ? 'ski' : 'wb')
       return [{ type: 'group', fmt: 'circuit', rounds: f < 0.9 ? 1 : 2, rest: 120, restItem: 0, minutes: 10, work: 40, target: {}, w: 'A',
-        items: [{ ex: 'run', name: '', target: { meters: 1000, time: Math.round(pace) }, note: 'allure course' }, { ex: a, name: '', target: quarter(a), note: '' }, { ex: 'run', name: '', target: { meters: 1000, time: Math.round(pace) }, note: '' }, { ex: b, name: '', target: quarter(b), note: '' }] }]
+        items: [{ ex: 'run', name: '', target: { meters: 1000, time: Math.round(pace) }, note: 'allure course' }, withNeed({ ex: a, name: '', target: quarter(a), note: '', sets: 1, rest: 0 }, a, ctx), { ex: 'run', name: '', target: { meters: 1000, time: Math.round(pace) }, note: '' }, withNeed({ ex: b, name: '', target: quarter(b), note: '', sets: 1, rest: 0 }, b, ctx)] }]
     }
-    case 'rappel': return [blk({ ex: 'run', sets: 3, rest: 90, target: { meters: 500, time: Math.round(pace / 2) }, note: 'allure course, rien de nouveau' }), ...focus.slice(0, 2).map(st => blk({ ex: st, sets: 1, rest: 90, target: quarter(st) }))]
+    case 'rappel': return [blk({ ex: 'run', sets: 3, rest: 90, target: { meters: 500, time: Math.round(pace / 2) }, note: 'allure course, rien de nouveau' }), ...focus.slice(0, 2).map(st => withNeed(blk({ ex: st, sets: 1, rest: 90, target: quarter(st) }), st, ctx))]
     default: return null
   }
 }
@@ -104,8 +114,10 @@ export function generateWeeks(o) {
   const W = raceMon ? Math.max(1, Math.round((new Date(raceMon) - new Date(start)) / (7 * 864e5)) + 1) : 8
   const myFocus = stationGaps(o.gaps || []), duo = o.duo && o.race && o.race.format === 'duo' ? o.duo : null
   let pool = [...new Set([...(duo ? duo.both || [] : []), ...myFocus, ...(duo ? duo.carry || [] : [])])]
-  if (pool.length < 2) pool = [...new Set([...pool, ...STATIONS.map(x => x.id)])]
-  const runGap = (o.gaps || []).slice(0, 4).some(g => g.kind === 'run'), engineGap = (o.gaps || []).slice(0, 4).some(g => g.kind === 'engine')
+  const others = STATIONS.map(x => x.id).filter(id => !pool.includes(id))
+  const top = (o.gaps || []).slice(0, 4), runG = top.find(g => g.kind === 'run')
+  const runGap = !!runG && runG.need !== 'endurance' && runG.need !== 'compromis', engineGap = top.some(g => g.kind === 'engine') || (runG && runG.need === 'endurance'), compNeed = runG && runG.need === 'compromis'
+  const self = {}; (o.gaps || []).forEach(g => { if (g.st && g.self) self[g.st] = g.self; if (g.st && g.need && !self[g.st]) self[g.st] = { state: g.need } })
   const weeks = []
   let lastPhase = null, k = 0
   for (let w = 0; w < W; w++) {
@@ -120,8 +132,10 @@ export function generateWeeks(o) {
     factor = Math.max(0.5, Math.round((factor + 0.07 * (o.level || 0) * (build ? 1 : 0.4)) * 100) / 100)
     let keys = TEMPLATES[ph.id].slice(0, perWeek)
     if (runGap && (ph.id === 'developpement' || ph.id === 'specifique')) { const z = keys.lastIndexOf('z2'); if (z >= 0) keys[z] = 'allure' }
+    if (compNeed && (ph.id === 'developpement' || ph.id === 'fondation') && !keys.includes('compromis')) { const z = keys.lastIndexOf('z2'); if (z >= 0) keys[z] = 'compromis' }
     if (deload) keys = keys.map(x => x === 'simu' ? 'ateliers' : x)
-    const focus = [0, 1, 2].map(j => pool[(w * 2 + j) % pool.length]).filter((v, i, a) => a.indexOf(v) === i)
+    // lacunes en priorité chaque semaine ; les autres ateliers tournent pour garder la technique
+    const focus = (pool.length >= 3 ? [0, 1, 2].map(j => pool[(w * 2 + j) % pool.length]) : [...pool, ...[0, 1, 2].map(j => others[(w * 2 + j) % others.length])]).filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 3)
     const duoKey = duo ? ['simu', 'compromis', 'ateliers'].find(x => keys.includes(x)) : null
     const placed = placeKeys(keys, perWeek, o.template)
     const days = DAYS.map((label, i) => {
@@ -129,11 +143,14 @@ export function generateWeeks(o) {
       if (key === 'coach') { const t = pk.coach, cl = (COACH_ACTS.find(a => a[0] === t.act) || [0, 'Cours'])[1]
         return { date, day: label, key, title: (t.label || cl) + ' (avec coach)', detail: 'Séance encadrée par votre coach' + (pk.replaces ? ` : elle remplace « ${describe(pk.replaces, { phase: ph.id, factor })[0]} » du plan.` : '.') + ' Cochez « Fait » une fois terminée.', zone: COACH_ZONE[t.intensity] || 'Z3', min: +t.min || 60, focus: [], duo: false, blocks: null, coach: { act: t.act, intensity: t.intensity || 'modere' }, fixed: true } }
       const isDuo = !!duoKey && key === duoKey
-      const ctx = { focus: isDuo ? [...new Set([...(duo.focus || []), ...focus])] : focus, e1rm: o.e1rm, phase: ph.id, factor, pace: o.pace, duo: isDuo, partner: duo && duo.partner }
+      const ctx = { focus: isDuo ? [...new Set([...(duo.focus || []), ...focus])] : focus, e1rm: o.e1rm, phase: ph.id, factor, pace: o.pace, duo: isDuo, partner: duo && duo.partner, self, prog: W > 1 ? w / (W - 1) : 1 }
       let min = r5(BASE_MIN[key] * (key === 'repos' ? 1 : factor) + (engineGap && key === 'z2' ? 10 : 0))
       ctx.min = min
-      const [title, detail] = describe(key, ctx)
-      return { date, day: label, key, title: pk.renfo ? title + ' (renfo sans coach)' : title, detail: pk.renfo ? 'Votre créneau de renfo libre, rempli selon vos lacunes. ' + detail : detail, zone: ZONE[key], min, focus: ctx.focus.slice(0, 3), duo: isDuo, blocks: blocksFor(key, ctx), ...(pk.fixed ? { fixed: true } : {}) }
+      const [title, detail0] = describe(key, ctx), blocks = blocksFor(key, ctx)
+      // consignes issues du ressenti (charge visée, technique) visibles dans le programme
+      const extra = (blocks || []).flatMap(b => b.type === 'group' ? b.items : [b]).filter(b => b.ex && STATION[b.ex] && b.note && /charge \d|technique d|découverte/.test(b.note)).map(b => STATION[b.ex].label + ' : ' + b.note.split(' · ').filter(x => /charge \d|technique|découverte/.test(x)).join(', '))
+      const detail = detail0 + (extra.length ? ' ' + extra.join(' ; ') + '.' : '')
+      return { date, day: label, key, title: pk.renfo ? title + ' (renfo sans coach)' : title, detail: pk.renfo ? 'Votre créneau de renfo libre, rempli selon vos lacunes. ' + detail : detail, zone: ZONE[key], min, focus: ctx.focus.slice(0, 3), duo: isDuo, blocks, ...(pk.fixed ? { fixed: true } : {}) }
     })
     weeks.push({ start: ws, phase: { id: ph.id, label: ph.label, note: ph.note }, factor, deload, focus, days })
   }

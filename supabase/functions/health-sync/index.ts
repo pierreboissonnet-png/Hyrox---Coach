@@ -6,7 +6,7 @@
 // envoyé dans l'en-tête « x-sync-token » (ou « Authorization: Bearer … » pour Health Auto Export).
 // À déployer SANS vérification JWT (le jeton personnel remplace la session).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries } from './logic.ts'
+import { extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries, extractMetrics, vitalsByDay, periods, extractWorkouts, activityOf } from './logic.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sync-token', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -34,7 +34,69 @@ Deno.serve(async req => {
   const tzName = (body && body.timezone) || Deno.env.get('DEFAULT_TZ') || 'Europe/Paris'
   const tz = tzOffset(tzName)
   const { hr, sleep, sleepNights, source } = extract(body)
-  const out = { source, hr_points: hr.length, nights: 0, sessions: [] as string[] }
+  const out = { source, hr_points: hr.length, nights: 0, sessions: [] as string[], days: 0, weights: 0, periods: 0, workouts: 0 }
+  const AUTO = 'Santé (auto)', isAuto = (d: any) => !!(d && String(d.source || '').startsWith('Santé'))
+  const today = new Date(Date.now() + tz * 6e4).toISOString().slice(0, 10)
+
+  // ---- Mesures du jour (FC repos, VFC, VO2max, pas, énergie, respiration) → journal « vitals » ; poids → journal « weight »
+  const M = extractMetrics(body), V = vitalsByDay(M, tz), vdays = Object.keys(V)
+  if (vdays.length) {
+    const { data: ex } = await db.from('journal').select('id,day,kind,data').eq('user_id', uid).in('kind', ['vitals', 'weight']).in('day', vdays)
+    for (const d of vdays) {
+      const { weight, fat, ...vit } = V[d]
+      if (Object.keys(vit).length) {
+        const e = (ex || []).find(x => x.day === d && x.kind === 'vitals')
+        if (e) await db.from('journal').update({ data: { ...e.data, ...vit, source: AUTO } }).eq('id', e.id)
+        else await db.from('journal').insert({ user_id: uid, kind: 'vitals', day: d, data: { ...vit, source: AUTO } })
+        out.days++
+      }
+      if (weight && weight > 25 && weight < 300) {
+        const e = (ex || []).find(x => x.day === d && x.kind === 'weight')
+        if (e && !isAuto(e.data)) continue                       // une pesée saisie à la main garde la priorité
+        const data = { kg: weight, fat: fat ?? (e && e.data.fat) ?? null, source: AUTO }
+        if (e) await db.from('journal').update({ data }).eq('id', e.id); else await db.from('journal').insert({ user_id: uid, kind: 'weight', day: d, data })
+        out.weights++
+      }
+    }
+    const lastW = vdays.filter(d => V[d].weight).sort().pop()
+    if (lastW && lastW >= new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10)) await db.from('profiles').update({ weight_kg: V[lastW].weight }).eq('id', uid)
+  }
+
+  // ---- Règles → journal « cycle » (une entrée par cycle, fin ajoutée quand les règles sont terminées)
+  const P = periods(M, tz)
+  if (P.length) {
+    const { data: cy } = await db.from('journal').select('id,day,data').eq('user_id', uid).eq('kind', 'cycle')
+    const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 4 * 864e5
+    for (const p of P) {
+      const finished = p.end < new Date(Date.parse(today) - 864e5).toISOString().slice(0, 10)
+      const e = (cy || []).find(x => near(x.day, p.start) || (x.data && x.data.end && p.start >= x.day && p.start <= x.data.end))
+      if (e) {
+        if (isAuto(e.data) || !e.data.end) { const data = { ...e.data, ...(finished ? { end: p.end > (e.data.end || '') ? p.end : e.data.end } : {}), ...(isAuto(e.data) ? { source: AUTO } : {}) }; await db.from('journal').update({ data, ...(isAuto(e.data) && p.start < e.day ? { day: p.start } : {}) }).eq('id', e.id) }
+      } else await db.from('journal').insert({ user_id: uid, kind: 'cycle', day: p.start, data: { ...(finished ? { end: p.end } : {}), source: AUTO } })
+      out.periods++
+    }
+  }
+
+  // ---- Entraînements de la montre → activités (si aucune séance chronométrée dans l'app ne les couvre)
+  const WK = extractWorkouts(body)
+  if (WK.length) {
+    const from = new Date(Math.min(...WK.map(w => w.a)) - 864e5).toISOString().slice(0, 10), to = new Date(Math.max(...WK.map(w => w.b)) + 864e5).toISOString().slice(0, 10)
+    const { data: ss } = await db.from('sessions').select('id,data,session_date').or(`athletes->>A.eq.${uid},athletes->>B.eq.${uid}`).gte('session_date', from).lte('session_date', to)
+    for (const w of WK) {
+      const ext = 'hk-' + w.a + '-' + w.name.slice(0, 20)
+      const ex = activityOf(w.name), dur = Math.round((w.b - w.a) / 1000), date = new Date(w.a + tz * 6e4).toISOString().slice(0, 10)
+      const covered = (ss || []).some(s => { const d = s.data || {}; if (d.extId === ext) return true
+        if (d.quick && !d.auto && s.session_date === date && d.steps && d.steps[0] && d.steps[0].ex === ex) return true   // déjà saisie à la main
+        const st = d.startedAt; if (!st || d.quick) return false
+        const cps = [...(d.cp || []), ...((d.steps || []).map((x: any) => x.e))].filter((v: any) => v != null); const en = st + (cps.length ? Math.max(...cps) : 36e5)
+        return st < w.b + 30 * 6e4 && en > w.a - 30 * 6e4 })
+      if (covered) continue
+      const step = { g: 0, set: 1, of: 1, ex, name: ex === 'other' ? w.name : '', rest: 0, w: 'A', target: {}, note: '', s: 0, e: dur * 1000, done: { time: dur, meters: w.km ? Math.round(w.km * 1000) : null, rpe: null } }
+      await db.from('sessions').insert({ owner: uid, team_id: null, kind: 'entrainement', session_date: date, name: w.name, athletes: { A: uid, B: null }, names: { A: null, B: null },
+        data: { format: 'custom', quick: true, auto: true, extId: ext, title: w.name, startedAt: 0, steps: [step], blocks: [{ ex, name: step.name, sets: 1, rest: 0, w: 'A', target: {}, note: '' }], note: 'Importé de l’app Santé', ...(w.hr ? { avgHR: Math.round(w.hr) } : {}), ...(w.kcal ? { kcal: Math.round(w.kcal) } : {}), startMs: w.a } })
+      out.workouts++
+    }
+  }
 
   // ---- Sommeil : une entrée par nuit ; une saisie manuelle n'est jamais écrasée
   const N = [...nights(sleep, tz), ...nightsFromAggregates(sleepNights, tz)]
@@ -64,7 +126,7 @@ Deno.serve(async req => {
     // Séances où l'utilisateur est athlète et qui ont démarré dans la plage reçue (± 4 h)
     const { data: ss } = await db.from('sessions').select('id,data,athletes').or(`athletes->>A.eq.${uid},athletes->>B.eq.${uid}`).gte('session_date', new Date(minT - 864e5).toISOString().slice(0, 10)).lte('session_date', new Date(maxT + 864e5).toISOString().slice(0, 10))
     for (const s of ss || []) {
-      const st = s.data && s.data.startedAt; if (!st || st < minT - 4 * 36e5 || st > maxT) continue
+      const st = s.data && (s.data.startedAt || s.data.startMs); if (!st || st < minT - 4 * 36e5 || st > maxT) continue
       const cps = [...(s.data.cp || []), ...((s.data.steps || []).map((x: any) => x.e))].filter((v: number | null) => v != null)   // séance Hyrox ou spécialisée
       const end = st + (cps.length ? Math.max(...cps) : 3 * 36e5)
       const { data: cur } = await db.from('hr_series').select('source').eq('session_id', s.id).eq('user_id', uid).maybeSingle()
@@ -79,6 +141,6 @@ Deno.serve(async req => {
     }
   }
 
-  await db.from('health_tokens').update({ last_used: new Date().toISOString(), last_summary: `${out.hr_points} mesures FC · ${out.nights} nuit(s) · ${out.sessions.length} séance(s)` }).eq('id', tok.id)
+  await db.from('health_tokens').update({ last_used: new Date().toISOString(), last_summary: [`${out.hr_points} mesures FC`, `${out.nights} nuit(s)`, out.days && `${out.days} jour(s) de mesures`, out.weights && `${out.weights} pesée(s)`, out.periods && 'cycle', out.workouts && `${out.workouts} entraînement(s)`, `${out.sessions.length} séance(s) avec cardio`].filter(Boolean).join(' · ') }).eq('id', tok.id)
   return json({ ok: true, ...out })
 })

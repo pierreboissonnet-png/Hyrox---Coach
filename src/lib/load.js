@@ -19,6 +19,7 @@ export function sessionKcal(s, hrRow, p) {
   const min = sessionMinutes(s); if (!min) return 0
   const S = hrRow ? series(hrRow) : null, h = S ? hrStat(S, 0, min * 60) : null
   if (h) return kcalFromHR(h.avg, min, p) || 0
+  if (isCustom(s) && s.data.kcal) return s.data.kcal
   if (isCustom(s) && s.data.avgHR) return kcalFromHR(s.data.avgHR, min, p) || 0
   if (isCustom(s)) return kcalFromMET(s.data.steps || [], p)
   return Math.round(10 * ((p && +p.weight_kg) || 70) * min / 60)   // Hyrox ≈ 10 MET

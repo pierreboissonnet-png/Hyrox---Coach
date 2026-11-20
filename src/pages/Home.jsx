@@ -7,7 +7,11 @@ import { sleepStats, fmtH } from '../lib/sleep.js'
 import { Ring } from '../charts.jsx'
 import { fmt, fd, frDate, daysUntil, tone } from '../lib/hyrox.js'
 import { summary, insights } from '../lib/analyze.js'
-import { buildProgram } from '../lib/program.js'
+import { buildProgram, wellNorm } from '../lib/program.js'
+import { trainingLoad } from '../lib/load.js'
+import { targets, DAY_TYPES } from '../lib/nutrition.js'
+import { gaps as dietGaps } from '../lib/diet.js'
+import { NutriGauges } from './Me.jsx'
 import { plansOf, upcoming, RACE_TYPE, KIND, activeTeams, partnerOf, isKeeperOnly, athleteNames, mainRace, teamName } from './common.js'
 import { normData } from '../lib/session.js'
 import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/custom.js'
@@ -23,6 +27,21 @@ export default function Home() {
   const last = sessions.find(s => !isKeeperOnly(s, profile.id, teams) && !isCustom(s))
   const lastCustom = sessions.find(s => !isKeeperOnly(s, profile.id, teams) && isCustom(s) && !isPlanned(s) && !isQuick(s))
   const tp = useTodayPlan()
+  const weekDone = useMemo(() => { if (!tp) return { n: 0, done: 0 }; const w = tp.week.days.filter(d => d.key !== 'repos'); return { n: w.length, done: w.filter(d => tp.doneOn(d.date)).length } }, [tp && tp.week, sessions])
+  const focus = tp && (tp.gaps || []).find(g => g.kind !== 'test')
+  const tl = useMemo(() => trainingLoad(sessions, profile.id), [sessions])
+  const rhr = useMemo(() => { const L = (tp && tp.vitals) || []; const e = L.find(x => x.data && x.data.rhr != null); if (!e) return null; const xs = L.filter(x => x !== e && x.data && x.data.rhr != null).slice(0, 28).map(x => x.data.rhr); return { v: e.data.rhr, avg: xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null } }, [tp && tp.vitals])
+  const wb = useLoad(() => profile.consent_health ? api.journal.list('wellbeing') : [], [])
+  const wToday = (wb.data || []).find(e => e.day === todayISO()), wn = wToday ? wellNorm(wToday) : null
+  const formeScore = wn ? Math.max(wn.fatigue || 0, wn.soreness || 0, 5 - (wn.sleep ?? 5)) : null
+  const formeToday = formeScore == null ? null : formeScore >= 4 ? 'Fatigue' : formeScore >= 3 ? 'Moyenne' : 'Bonne'
+  const formeTone = formeScore == null ? '' : formeScore >= 4 ? 'bad' : formeScore >= 3 ? 'even' : 'good'
+  const lastSim = useMemo(() => sessions.find(s => !isCustom(s) && (s.kind === 'simulation' || s.kind === 'course') && !isKeeperOnly(s, profile.id, teams) && normData(s.data).cp[30] != null), [sessions])
+  const lastSimSum = useMemo(() => lastSim ? summary(lastSim, lastSim.plan || plans[lastSim.team_id]) : null, [lastSim])
+  const dayId = !tp ? 'entrainement' : tp.d.key === 'repos' ? 'repos' : ['simu', 'compromis', 'seuil', 'allure'].includes(tp.d.key) ? 'intense' : 'entrainement'
+  const dietJ = useLoad(() => api.journal.list('diet'), [])
+  const dietG = (dietJ.data || [])[0] ? dietGaps((dietJ.data || [])[0].data, profile, dayId) : null
+  const nut = targets(profile, dayId), dayLabel = 'journée ' + (DAY_TYPES.find(x => x.id === dayId) || {}).label.toLowerCase()
   const [train, setTrain] = useState(false), [quick, setQuick] = useState(false)
   const plannedToday = sessions.filter(s => isPlanned(s) && s.session_date === todayISO() && !isKeeperOnly(s, profile.id, teams))
   const toKeep = sessions.filter(s => isKeeperOnly(s, profile.id, teams) && (isCustom(s) ? !customSummary(s).complete : normData(s.data).cp[30] == null))
@@ -76,7 +95,35 @@ export default function Home() {
     {train && <TrainSheet tp={tp} onClose={() => setTrain(false)} />}
     {quick && <QuickSheet onClose={() => setQuick(false)} />}
     {toKeep.length > 0 && <Sec title="À pointer"><List>{toKeep.map(s => <Row key={s.id} icon="timer" color="#30d158" title={'Pointer ' + (athleteNames(s) || s.name)} sub={s.name} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
-    {profile.consent_health && <List><Row icon="moon" color="#5856d6" title={lastNight && lastNight.day >= new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? 'Sommeil : ' + fmtH(lastNight.data.asleep) : 'Noter ma nuit'} sub={sst ? 'Moyenne 7 nuits ' + fmtH(sst.avg) + (sst.debt > 300 ? ' · dette ' + fmtH(sst.debt) : '') : 'Suivi du sommeil'} href="#/moi/sante?t=sommeil" /></List>}
+    {tp && <a href="#/moi/programme" className="glass card" style={{ display: 'block', color: 'inherit' }}>
+      <div className="row-gap"><b>Ma progression</b><span className="spacer" />{tp.prog && <span className={'badge ' + (tp.prog.status === 'behind' ? 'warn' : tp.prog.status === 'ahead' ? 'good' : '')}>{tp.prog.status === 'behind' ? 'En retard' : tp.prog.status === 'ahead' ? 'En avance' : tp.prog.status === 'race' ? 'À recalculer' : 'Dans les temps'}</span>}<Icon name="chev" size={14} className="chev" /></div>
+      {tp.prog && <><div className="small muted" style={{ marginTop: 4 }}>Semaine {tp.wi + 1}/{tp.W} · {tp.phase.label}{tp.raceName ? ' · ' + tp.raceName : ''}</div>
+        <div style={{ height: 8, borderRadius: 99, background: 'var(--fill)', margin: '8px 0 4px', position: 'relative', overflow: 'hidden' }}>
+          <i style={{ position: 'absolute', inset: 0, width: (tp.prog.total ? tp.prog.doneAll / tp.prog.total * 100 : 0) + '%', background: 'var(--good, #30d158)', borderRadius: 99 }} />
+          <i style={{ position: 'absolute', top: 0, bottom: 0, left: ((tp.wi + ((new Date().getDay() + 6) % 7 + 1) / 7) / tp.W * 100) + '%', width: 2, background: 'var(--ink)' }} title="Aujourd’hui" /></div>
+        <div className="row-gap tiny muted"><span>{tp.prog.doneAll}/{tp.prog.total} séances du plan{tp.prog.adh != null ? ' · assiduité ' + Math.round(tp.prog.adh * 100) + ' %' : ''}</span><span className="spacer" /><span>cette semaine {weekDone.done}/{weekDone.n}</span></div></>}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginTop: 8 }}>{tp.week.days.map(d => { const done = tp.doneOn(d.date), rest = d.key === 'repos' || (d.date < (tp.created || '') && !tp.doneOn(d.date)), past = d.date < tp.today, isT = d.date === tp.today
+        const bg = done && !rest ? 'var(--good, #30d158)' : rest ? 'var(--fill)' : past ? 'rgba(255,69,58,.25)' : 'transparent'
+        return <div key={d.date} style={{ textAlign: 'center' }}><div className="tiny muted" style={{ fontWeight: isT ? 800 : 500, color: isT ? 'var(--accent)' : undefined }}>{d.day.slice(0, 1)}</div>
+          <div title={d.title} style={{ height: 30, borderRadius: 8, marginTop: 3, background: bg, border: !rest && !done && !past ? '1.5px solid var(--accent)' : isT ? '1.5px solid var(--accent)' : '0', display: 'grid', placeItems: 'center', color: done && !rest ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: 700 }}>{done && !rest ? '✓' : rest ? '' : past ? '×' : (d.zone || '').replace('Z3–Z4', 'Z3')}</div></div> })}</div>
+      <div className="small muted" style={{ marginTop: 8 }}>{focus ? <>Focus : <b>{focus.label}</b> · </> : null}charge 7 j : {tl.ratio != null && tl.chronic > 30 ? tl.ratio.toFixed(1).replace('.', ',') + ' × votre moyenne' : Math.round(tl.acute) + ' pts'}</div>
+    </a>}
+
+    {profile.consent_health && <><h2 className="sec">Récupération</h2><a href="#/moi/sante?t=forme" style={{ color: 'inherit' }}><div className="stats three">
+      <Stat k="Nuit" v={lastNight && lastNight.day >= new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? fmtH(lastNight.data.asleep) : '—'} d={sst ? 'moy. ' + fmtH(sst.avg) : 'à noter'} tone={sst && sst.avg < 420 ? 'bad' : ''} />
+      <Stat k="FC repos" v={rhr ? rhr.v : '—'} d={rhr && rhr.avg ? 'moy. ' + Math.round(rhr.avg) + ' bpm' : 'synchro Santé'} tone={rhr && rhr.avg && rhr.v >= rhr.avg + 4 ? 'bad' : ''} />
+      <Stat k="Forme" v={formeToday ? formeToday : '—'} d={formeToday ? 'aujourd’hui' : 'à renseigner'} tone={formeTone} />
+    </div></a></>}
+
+    {main && <><h2 className="sec">Objectif {main.name}</h2><a href="#/courses" style={{ display: 'block', color: 'inherit' }}>
+      <div className="stats">
+        <Stat k="Objectif" v={main.goal_seconds ? fmt(main.goal_seconds) : '—'} d={'J−' + mainDays + ' · ' + RACE_TYPE(main)} />
+        <Stat k={lastSim ? (lastSim.kind === 'simulation' ? 'Dernière simulation' : 'Dernier Hyrox complet') : 'Référence'} v={lastSim ? fmt(lastSimSum.all.t) : '—'} d={lastSim ? (main.goal_seconds ? fd(lastSimSum.all.t - main.goal_seconds) + ' vs objectif' : frDate(lastSim.session_date)) : 'faites une simulation'} tone={lastSim && main.goal_seconds ? tone(lastSimSum.all.t - main.goal_seconds) : ''} />
+      </div></a></>}
+
+    <h2 className="sec">Nutrition du jour · {nut.kcal} kcal, {nut.prot} g de protéines</h2>
+    {dietG ? <a href="#/moi/nutrition" style={{ color: 'inherit', display: 'block' }}><NutriGauges G={dietG} day={dayId} limit={6} /></a>
+      : <a href="#/moi/nutrition" className="glass card" style={{ display: 'block', color: 'inherit' }}><b>Vos apports face à vos besoins</b><div className="small muted">Décrivez votre alimentation habituelle (2 min) pour voir ici les jauges énergie, protéines, glucides, fer… avec le besoin du jour ({dayLabel.replace('journée ', '')}). →</div></a>}
 
     {ups.length > 1 && <Sec title="Mes prochains Hyrox">
       <List>{ups.slice(1, 6).map(r => <Row key={r.id} icon="flag" color={r.priority === 'A' ? '#ff375f' : r.format === 'duo' ? '#ff9f0a' : '#0a84ff'} title={r.name} sub={`${frDate(r.race_date)} · ${RACE_TYPE(r)}${r.team_id ? ' · ' + (teamName(teams, r.team_id) || '') : ''}${main && r.id === main.id ? ' · objectif principal' : ''}`} value={'J−' + daysUntil(r.race_date)} href="#/courses" />)}</List>

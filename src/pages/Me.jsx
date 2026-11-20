@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api, setDemo, COACH_MODE } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Switch, Sheet, Empty, Icon, Stat, useToast, useLoad, parseNum } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Switch, Sheet, Empty, Icon, Stat, useToast, useLoad, parseNum, Chips } from '../ui.jsx'
 import { LineChart, Bars } from '../charts.jsx'
 import { durationMin, fmtH, sleepStats, sleepAdvice, readAppleSleep } from '../lib/sleep.js'
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
@@ -17,6 +17,7 @@ import { detect, athletesIn, convert } from '../lib/importers.js'
 import { upcoming, plansOf, activeTeams, RACE_TYPE, mainRace } from './common.js'
 import { slotsOf } from './Teams.jsx'
 import { Pains } from './Body.jsx'
+import { ShortcutGuide } from './SyncGuide.jsx'
 
 export function Me() {
   const { profile, races } = useApp()
@@ -112,6 +113,16 @@ function Stepper({ value, onChange, step = 1 }) {
 const REC_STYLE = { remplacer: ['Remplacer', 'warn'], ajouter: ['Ajouter', 'accent'], 'complément': ['Complément', ''], ok: ['Bien', 'good'] }
 
 /** Alimentation déclarée → apports → recommandations */
+/** Jauges des apports estimés (alimentation déclarée) face aux besoins du jour */
+export function NutriGauges({ G, day, limit }) {
+  const L = limit ? G.slice(0, limit) : G
+  return <div className="glass card">{L.map(g => { const pct = Math.min(1.5, g.ratio), col = g.k === 'kcal' ? (g.ratio < 0.85 || g.ratio > 1.15 ? 'var(--warn)' : 'var(--good)') : g.ratio < 0.7 ? 'var(--bad)' : g.ratio < 0.9 ? 'var(--warn)' : 'var(--good)'
+      return <div key={g.k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 104px', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 14 }}>
+        <span>{g.label}</span>
+        <span style={{ position: 'relative', height: 10, background: 'var(--fill)', borderRadius: 99 }}><span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (pct / 1.5 * 100) + '%', background: col, borderRadius: 99 }} /><span style={{ position: 'absolute', left: (100 / 1.5) + '%', top: -3, bottom: -3, width: 1.5, background: 'var(--ink-3)' }} /></span>
+        <span className="num small" style={{ textAlign: 'right' }}>{Math.round(g.have)} / {Math.round(g.need)} {g.unit}</span></div> })}
+      <p className="small muted" style={{ marginBottom: 0 }}>Le trait vertical marque le besoin estimé ({DAY_TYPES.find(x => x.id === day).label.toLowerCase()}). Estimations à partir de portions moyennes : un ordre de grandeur, pas une pesée.</p></div>
+}
 function DietCoach({ T }) {
   const { profile } = useApp(), toast = useToast()
   const j = useLoad(() => api.journal.list('diet'), [])
@@ -146,12 +157,7 @@ function DietCoach({ T }) {
     {T && T.list.length > 0 && <TodayCard T={T} />}
     <Seg value={day} onChange={setDay} options={DAY_TYPES.map(x => [x.id, x.label])} />
     <h2 className="sec">Apports estimés par jour</h2>
-    <div className="glass card">{G.map(g => { const pct = Math.min(1.5, g.ratio), col = g.k === 'kcal' ? (g.ratio < 0.85 || g.ratio > 1.15 ? 'var(--warn)' : 'var(--good)') : g.ratio < 0.7 ? 'var(--bad)' : g.ratio < 0.9 ? 'var(--warn)' : 'var(--good)'
-      return <div key={g.k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 104px', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 14 }}>
-        <span>{g.label}</span>
-        <span style={{ position: 'relative', height: 10, background: 'var(--fill)', borderRadius: 99 }}><span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (pct / 1.5 * 100) + '%', background: col, borderRadius: 99 }} /><span style={{ position: 'absolute', left: (100 / 1.5) + '%', top: -3, bottom: -3, width: 1.5, background: 'var(--ink-3)' }} /></span>
-        <span className="num small" style={{ textAlign: 'right' }}>{Math.round(g.have)} / {Math.round(g.need)} {g.unit}</span></div> })}
-      <p className="small muted" style={{ marginBottom: 0 }}>Le trait vertical marque le besoin estimé ({DAY_TYPES.find(x => x.id === day).label.toLowerCase()}). Estimations à partir de portions moyennes : un ordre de grandeur, pas une pesée.</p></div>
+    <NutriGauges G={G} day={day} />
     <h2 className="sec">Recommandations</h2>
     <List>{R.map((r, i) => <div className="row stack" key={i}><div className="row-gap"><span className={'badge ' + REC_STYLE[r.type][1]}>{REC_STYLE[r.type][0]}</span><b style={{ flex: 1, minWidth: 0 }}>{r.text}</b></div><span className="small muted">{r.why}</span></div>)}</List>
     <p className="foot">Repères ANSES et recommandations pour sportifs. Pour un suivi personnalisé (perte de poids, troubles digestifs, grossesse, pathologie), consultez un(e) diététicien(ne) du sport.</p>
@@ -178,7 +184,7 @@ export function Health() {
   if (!profile.consent_health) return <Page back="#/moi" title="Santé"><div className="glass card"><h3>Accord nécessaire</h3><p className="muted small">Pour enregistrer poids, prises de sang{profile.sex === 'F' ? ', cycle' : ''} et forme, activez « Données de santé » dans les réglages. Ces données restent strictement privées.</p><a className="btn small" href="#/moi/reglages">Réglages</a></div></Page>
   const tabs = [['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : []), ['forme', 'Forme'], ['douleurs', 'Douleurs']]
   return <Page back="#/moi" title="Santé" subtitle="Privé : visible par vous seul(e).">
-    <div style={{ overflowX: 'auto', margin: '0 -16px', padding: '0 16px' }}><div className="seg" role="group" style={{ minWidth: 'max-content' }}>{tabs.map(([v, l]) => <button key={v} aria-pressed={tab === v} onClick={() => setTab(v)} style={{ whiteSpace: 'nowrap' }}>{l}</button>)}</div></div>
+    <Chips value={tab} onChange={setTab} label="Rubriques" options={tabs} />
     {tab === 'douleurs' && <Pains />}
     {tab === 'sommeil' && <Sleep />}{tab === 'poids' && <Weight />}{tab === 'sang' && <Blood />}{tab === 'cycle' && profile.sex === 'F' && <Cycle />}{tab === 'forme' && <Wellbeing />}
   </Page>
@@ -212,7 +218,10 @@ function Sleep() {
       setImp(''); j.reload(); toast(n ? `${n} nuit(s) importée(s)` : 'Aucune nouvelle nuit à importer')
     } catch (e) { setImp(''); toast(e.message) }
   }
+  const auto = all.some(e => e.data && String(e.data.source || '').startsWith('Santé')), lastAuto = all.find(e => e.data && String(e.data.source || '').startsWith('Santé'))
+  const stale = lastAuto && lastAuto.day < new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10)
   return <>
+    <a href="#/moi/sync" className={'note small'} style={{ display: 'block', color: 'inherit', marginTop: 0 }}>{!auto ? <><b>Synchro automatique</b> : vos nuits arrivent seules depuis l’app Santé de l’iPhone (et aussi la FC, le poids, le cycle, les entraînements de la montre). Configurer →</> : stale ? <><b>Synchro Santé</b> : aucune nuit reçue depuis le {frDate(lastAuto.day)}. Vérifier l’automatisation sur l’iPhone →</> : <>✓ Nuits synchronisées automatiquement depuis l’app Santé · <u>réglages</u></>}</a>
     {st ? <div className="stats">
       <Stat k="Moyenne 7 nuits" v={fmtH(st.avg)} d={st30 && st30.n > st.n ? '30 nuits : ' + fmtH(st30.avg) : st.n + ' nuit(s)'} tone={st.avg < 420 ? 'bad' : st.avg >= target ? 'good' : 'even'} />
       <Stat k="Dette (7 nuits)" v={fmtH(st.debt)} d={'objectif ' + fmtH(target) + ' / nuit'} tone={st.debt > 300 ? 'bad' : 'good'} />
@@ -356,6 +365,19 @@ function Cycle() {
       <button className="icon-btn" aria-label="Supprimer" onClick={async () => { if (confirm('Supprimer ?')) { await api.journal.remove(c.id); j.reload() } }}><Icon name="trash" size={18} /></button></div>)}</List></>}
   </>
 }
+function WatchCard() {
+  const v = useLoad(() => api.journal.list('vitals'), [])
+  const L = v.data || []
+  if (v.loading) return null
+  if (!L.length) return <a className="glass card small" href="#/moi/sync" style={{ display: 'block', color: 'inherit' }}><b>Mesures de la montre</b><div className="muted">FC au repos, variabilité cardiaque, VO2max, pas, poids… arrivent automatiquement avec la synchro Santé. Configurer →</div></a>
+  const last = k => { const e = L.find(x => x.data && x.data[k] != null); return e ? { v: e.data[k], day: e.day } : null }
+  const avg = (k, n = 28) => { const xs = L.slice(1, n + 1).map(x => x.data && x.data[k]).filter(x => x != null); return xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null }
+  const T = [['rhr', 'FC au repos', ' bpm', 'lower'], ['hrv', 'Variabilité cardiaque', ' ms', 'higher'], ['vo2', 'VO2max', '', 'higher'], ['steps', 'Pas', '', null], ['kcal', 'Énergie active', ' kcal', null]]
+  return <><h2 className="sec">Mesures de la montre</h2><div className="stats">{T.map(([k, l, u, better]) => { const x = last(k); if (!x) return null; const a = avg(k), d = a != null && better ? x.v - a : null
+    const tone = d == null ? '' : (better === 'lower' ? d > 3 : d < -a * 0.1) ? 'bad' : (better === 'lower' ? d < -2 : d > a * 0.05) ? 'good' : ''
+    return <Stat key={k} k={l} v={String(x.v).replace('.', ',') + u} d={(a != null && better ? 'moyenne ' + String(Math.round(a)).replace('.', ',') + u : '') + (x.day !== todayISO() ? (a != null && better ? ' · ' : '') + frDate(x.day).slice(0, 5) : '')} tone={tone} /> })}</div>
+    <p className="foot">FC au repos en hausse ou variabilité cardiaque en baisse par rapport à votre moyenne : le programme allège la séance du jour si vous n’avez pas saisi votre forme.</p></>
+}
 function Wellbeing() {
   const j = useLoad(() => api.journal.list('wellbeing'), []), toast = useToast()
   const [v, setV] = useState({ fatigue: 1, sleep: 3, soreness: 1, mood: 3 })
@@ -375,6 +397,7 @@ function Wellbeing() {
   }
   const lbl = (k, x) => x == null ? '–' : L[k][1][Math.max(0, Math.min(5, Math.round(x)))].toLowerCase()
   return <>
+    <WatchCard />
     <List>{Object.entries(L).map(([k, [l, names]]) => <div className="row stack" key={k}><div className="row-gap"><span>{l}</span><span className="spacer" /><b>{names[v[k]]}</b><span className="num small muted">{v[k]}/5</span></div>
       <input type="range" min="0" max="5" step="1" value={v[k]} onChange={e => setV({ ...v, [k]: +e.target.value })} aria-label={l} aria-valuetext={names[v[k]]} /><div className="row-gap tiny faint"><span>0 · {names[0].toLowerCase()}</span><span className="spacer" /><span>5 · {names[5].toLowerCase()}</span></div></div>)}</List>
     <button className="btn block" style={{ marginTop: 12 }} onClick={save}>{todayRow ? 'Mettre à jour la forme du jour' : 'Enregistrer la forme du jour'}</button>
@@ -529,12 +552,17 @@ export function HealthSync() {
     } catch (e) { setTest('Erreur : ' + e.message + ' (fonction « health-sync » déployée ?)') }
   }
   if (!profile.consent_health) return <Page back="#/moi/reglages" title="Synchro Santé"><div className="glass card"><p className="small">Activez d’abord « Données de santé » dans les réglages.</p></div></Page>
-  return <Page back="#/moi/reglages" title="Synchro Santé" subtitle="Sommeil et fréquence cardiaque envoyés automatiquement par votre iPhone.">
+  return <Page back="#/moi/reglages" title="Synchro Santé" subtitle="Vos données de l’app Santé envoyées automatiquement par votre iPhone.">
     <div className="glass card small">
       <b>Comment ça marche</b> : une application web ne peut pas lire l’app Santé directement (Apple le réserve aux apps installées). C’est donc l’iPhone qui envoie les données, automatiquement :
-      <div className="tip"><span className="dot good" /><span><b>chaque matin</b> : vos nuits (durée, phases, coucher et lever) ;</span></div>
-      <div className="tip"><span className="dot good" /><span><b>à la fin de chaque entraînement</b> (Apple Watch) : votre fréquence cardiaque, rattachée automatiquement à la séance chronométrée dans l’app, avec le détail par atelier dans l’onglet Cardio.</span></div>
-      Un import manuel garde toujours la priorité ; une saisie manuelle du sommeil n’est jamais écrasée.
+      <div className="tip"><span className="dot good" /><span><b>Sommeil</b> : durée, phases, coucher et lever, chaque matin ;</span></div>
+      <div className="tip"><span className="dot good" /><span><b>Fréquence cardiaque</b> des entraînements, rattachée à la séance avec le détail par atelier ;</span></div>
+      <div className="tip"><span className="dot good" /><span><b>Récupération</b> : FC au repos, variabilité cardiaque, VO2max, fréquence respiratoire (le programme s’allège si elles se dégradent) ;</span></div>
+      <div className="tip"><span className="dot good" /><span><b>Activité</b> : pas et énergie active (dépense du jour) ;</span></div>
+      <div className="tip"><span className="dot good" /><span><b>Poids et masse grasse</b> (balance connectée ou saisie dans Santé) ;</span></div>
+      {profile.sex === 'F' && <div className="tip"><span className="dot good" /><span><b>Règles</b> (écoulement menstruel) : le cycle se remplit seul ;</span></div>}
+      <div className="tip"><span className="dot good" /><span><b>Entraînements de la montre</b> (course, vélo, natation, renfo…) ajoutés comme activités s’ils n’ont pas été chronométrés dans l’app.</span></div>
+      Une saisie manuelle garde toujours la priorité et n’est jamais écrasée.
     </div>
 
     <h2 className="sec">1. Votre jeton personnel</h2>
@@ -555,24 +583,15 @@ export function HealthSync() {
 
     <h2 className="sec">3. Sur l’iPhone</h2>
     <Seg value={how} onChange={setHow} options={[['raccourci', 'Raccourcis (gratuit)'], ['hae', 'Health Auto Export']]} />
-    {how === 'raccourci' ? <div className="glass card small" style={{ lineHeight: 1.5 }}>
-      <b>Raccourci « Hyrox FC »</b> (app Raccourcis › +) :
-      <ol style={{ paddingLeft: 18, margin: '6px 0' }}>
-        <li><i>Rechercher des échantillons de santé</i> : Type <b>Fréquence cardiaque</b>, Date de début <b>au cours des 4 dernières heures</b>, trier par Date de début, aucune limite.</li>
-        <li><i>Répéter avec chaque</i> élément : <i>Formater la date</i> (Date de début de l’élément, format <b>ISO 8601</b>, avec l’heure) ; puis <i>Ajouter à la variable</i> <b>dates</b>. Ajoutez la <i>Valeur</i> de l’élément à la variable <b>valeurs</b>.</li>
-        <li><i>Obtenir le contenu de l’URL</i> : l’adresse ci-dessus, Méthode <b>POST</b>, En-têtes : <b>x-sync-token</b> = votre jeton, Corps <b>JSON</b> : clé <b>heart_rate</b> (dictionnaire) contenant <b>dates</b> = variable dates et <b>values</b> = variable valeurs.</li>
-      </ol>
-      <b>Raccourci « Hyrox Sommeil »</b> : même principe avec Type <b>Analyse du sommeil</b> sur <b>les dernières 24 heures</b>, trois variables <b>starts</b> (date de début), <b>ends</b> (date de fin), <b>values</b> (valeur), envoyées dans une clé <b>sleep</b>.
-      <p style={{ marginBottom: 0 }}><b>Automatisations</b> (Raccourcis › Automatisation › +) : « <b>Apple Watch – Entraînement › se termine</b> » → Hyrox FC ; « <b>Heure de la journée</b> 9:00 » → Hyrox Sommeil ; choisissez <b>Exécuter immédiatement</b> pour qu’aucune confirmation ne soit demandée.</p>
-    </div> : <div className="glass card small" style={{ lineHeight: 1.5 }}>
-      Application <b>Health Auto Export – JSON+CSV</b> (abonnement Premium pour les automatisations) :
+    {how === 'raccourci' ? <ShortcutGuide url={url} token={fresh} /> : <div className="glass card small" style={{ lineHeight: 1.5 }}>
+      Application <b>Health Auto Export – JSON+CSV</b> (abonnement Premium pour les automatisations) : <b>recommandée pour tout synchroniser</b>, entraînements compris.
       <ol style={{ paddingLeft: 18, margin: '6px 0' }}>
         <li>Automations › New › <b>REST API</b> ; URL = l’adresse ci-dessus.</li>
         <li>Headers : <b>x-sync-token</b> = votre jeton.</li>
-        <li>Data Type <b>Health Metrics</b> : cochez <b>Heart Rate</b> et <b>Sleep Analysis</b> ; Format <b>JSON</b> ; Period <b>Since last sync</b> ; Sync Cadence toutes les heures (ou après chaque entraînement).</li>
+        <li>Data Type <b>Health Metrics</b>, cochez : <b>Heart Rate, Sleep Analysis, Resting Heart Rate, Heart Rate Variability, VO2 Max, Step Count, Active Energy, Weight &amp; Body Mass, Body Fat Percentage{profile.sex === 'F' ? ', Menstrual Flow' : ''}</b> ; Format <b>JSON</b> ; Period <b>Since last sync</b> ; toutes les heures.</li>
+        <li>Une deuxième automatisation avec Data Type <b>Workouts</b> (même URL, même en-tête) pour les entraînements de la montre.</li>
       </ol>
-      Plus simple à régler et plus fiable que les Raccourcis pour de gros volumes de mesures.
     </div>}
-    <p className="foot">Données reçues : uniquement la fréquence cardiaque et le sommeil, stockés dans votre espace privé. Votre partenaire ne voit votre cardio que sur les séances communes, comme pour un import manuel.</p>
+    <p className="foot">Données stockées dans votre espace privé. Votre partenaire ne voit votre cardio que sur les séances communes, comme pour un import manuel ; le reste n’est visible que par vous.</p>
   </Page>
 }

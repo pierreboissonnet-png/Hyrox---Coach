@@ -93,6 +93,13 @@ export function Switch({ checked, onChange, label }) {
 export function Seg({ value, options, onChange }) {
   return <div className="seg" role="group">{options.map(([v, l]) => <button key={v} aria-pressed={value === v} onClick={() => onChange(v)}>{l}</button>)}</div>
 }
+/** Filtres en pastilles qui passent à la ligne (rien ne déborde de l'écran) */
+export function Chips({ value, options, onChange, label }) {
+  return <div role="group" aria-label={label} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '4px 0 10px' }}>
+    {options.map(([v, l]) => { const on = value === v; return <button key={v} aria-pressed={on} onClick={() => onChange(v)}
+      style={{ border: 0, borderRadius: 999, padding: '7px 13px', fontSize: 14, fontWeight: on ? 650 : 500, background: on ? 'var(--accent)' : 'var(--fill)', color: on ? '#fff' : 'var(--ink)', cursor: 'pointer' }}>{l}</button> })}
+  </div>
+}
 export function Sheet({ title, onClose, children, actions, footer, noBug }) {
   useEffect(() => { const k = e => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k) }, [onClose])
   return <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>

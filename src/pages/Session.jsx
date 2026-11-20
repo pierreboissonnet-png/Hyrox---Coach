@@ -368,6 +368,7 @@ function DeepRequest({ s, d, plan, who, hasFirst, onDone }) {
     setBusy(true)
     try {
       const payload = await coachPayload(s, d, plan, who, profile, { hrFor: hr && athlete ? [profile.id] : [] }); delete payload.insights
+      try { const lv = (await api.journal.list('level'))[0]; if (lv) payload.bilan_niveau = lv.data } catch {}   // ressenti et niveau déclarés : contexte pour le coach
       const r = await api.coach.request({ session_id: s.id, pseudo: profile.display_name || '', question: q.trim().slice(0, 1000), payload })
       toast(`Demande n°${r.no} envoyée : l’analyse approfondie apparaîtra ici`); setOpen(false); setQ(''); reqs.reload(); onDone && onDone()
     } catch (e) { toast(e.message) } finally { setBusy(false) }

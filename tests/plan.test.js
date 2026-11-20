@@ -78,3 +78,13 @@ test('semaine type, suggestions de course, lacunes comparées', async () => {
   assert.equal(R.list[0].title, 'Footing de reprise')
   const q = m.addToWeek(p, p.weeks[0].start, R.days[0].date, R.list[0]); assert.ok(q.weeks[0].days.find(d => d.date === R.days[0].date).added)
 })
+test('ressenti : lacunes et charges progressives', async () => {
+  const { withSelf } = await import('../src/lib/gaps.js'), m = await import('../src/lib/plan.js')
+  const g = withSelf([{ id: 'wb', kind: 'station', st: 'wb', label: 'Wall Balls', score: 0.3, why: 'lent' }, { id: 'test', kind: 'test', label: 'x', score: 0 }],
+    { wb: { state: 'maitrise' }, push: { state: 'charge', urgency: 3, cur: 102, target: 152 }, run: { state: 'compromis', urgency: 2 }, ski: { state: 'technique', urgency: 1 } })
+  assert.equal(g[0].id, 'push'); assert.ok(g[0].why.includes('102 → 152')); assert.equal(g.find(x => x.id === 'wb').score, 0.15); assert.equal(g[g.length - 1].kind, 'test')
+  const p = m.createPlan({ race: { id: 'r', name: 'X', race_date: '2027-03-14', format: 'solo' }, from: '2026-11-20', perWeek: 4, gaps: g })
+  const loads = p.weeks.flatMap(w => w.days).filter(d => d.blocks).flatMap(d => d.blocks).filter(b => b.ex === 'push' && b.target && b.target.load).map(b => b.target.load)
+  assert.ok(loads.length >= 2); assert.ok(loads[0] < loads[loads.length - 1]); assert.ok(Math.max(...loads) <= 152)
+  assert.ok(p.weeks.flatMap(w => w.days).some(d => d.key === 'compromis'))
+})

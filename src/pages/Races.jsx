@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, maskT } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, maskT, Chips } from '../ui.jsx'
 import { fmt, parseT, frDate, daysUntil, todayISO } from '../lib/hyrox.js'
 import { RACE_TYPE, activeTeams, mainRace, upcoming, PRIORITY, teamName } from './common.js'
 
@@ -18,7 +18,7 @@ export default function Races() {
     sub={`${frDate(r.race_date)}${r.city ? ' · ' + r.city : ''} · ${RACE_TYPE(r)}${r.team_id ? ' · ' + (teamName(teams, r.team_id) || 'duo') : ''} · ${PRIORITY[r.priority || 'B']}`}
     value={r.result_seconds ? fmt(r.result_seconds) : r.race_date >= todayISO() ? 'J−' + daysUntil(r.race_date) : r.goal_seconds ? fmt(r.goal_seconds) : ''} />
   return <Page title="Courses" actions={<button className="icon-btn glass" onClick={() => setEdit(blank)} aria-label="Ajouter une course"><Icon name="plus" /></button>}>
-    {teams.length > 0 && <Seg value={filter} onChange={setFilter} options={[['all', 'Toutes'], ...teams.map(t => [t.id, t.name]), ['solo', 'Solo']]} />}
+    {teams.length > 0 && <Chips value={filter} onChange={setFilter} label="Filtrer" options={[['all', 'Toutes'], ...teams.map(t => [t.id, t.name]), ['solo', 'Solo']]} />}
     <Sec title="À venir" foot="Programmez autant de Hyrox que vous voulez, en solo ou avec chacun de vos duos. La plus proche alimente le compte à rebours ; l’objectif principal (A) pilote le programme d’entraînement.">
       {up.length ? <List>{up.map(item)}</List> : <div className="glass card"><Empty icon="flag">Aucune course prévue.<br /><button className="btn small" style={{ marginTop: 12 }} onClick={() => setEdit(blank)}>Ajouter une course</button></Empty></div>}
     </Sec>

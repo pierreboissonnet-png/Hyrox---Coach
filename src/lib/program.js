@@ -34,6 +34,8 @@ export function buildProgram(o = {}) {
   const notes = [ph.note]
   let light = false
   const W = wellbeingImpact(o.well || [], o.todayISO)
+  // Sans « forme du jour » saisie, la montre prend le relais (FC au repos, variabilité cardiaque)
+  if (!W.day) { const V = vitalsImpact(o.vitals || [], o.todayISO); if (V) W.day = V }
   if (W.week) { light = true; notes.push(`Forme moyenne des 5 derniers jours dégradée (${W.week}) : semaine allégée, les séances intenses deviennent de l’endurance facile.`) }
   if (o.sleepAvg != null && o.sleepAvg < 360) { light = true; notes.push(`Sommeil moyen de ${Math.floor(o.sleepAvg / 60)} h ${String(Math.round(o.sleepAvg % 60)).padStart(2, '0')} sur 7 nuits : semaine allégée, priorité au sommeil (objectif 8 h).`) }
   else if (o.sleepAvg != null && o.sleepAvg < 420) notes.push(`Sommeil moyen de ${Math.floor(o.sleepAvg / 60)} h ${String(Math.round(o.sleepAvg % 60)).padStart(2, '0')} : visez au moins 7 h 30, surtout les veilles de séances intenses.`)
@@ -162,3 +164,21 @@ export function wellbeingImpact(entries, today) {
   return { day, week }
 }
 const fmt1 = x => String(Math.round(x * 10) / 10).replace('.', ',')
+
+/**
+ * État de récupération d'après la montre : FC au repos et VFC du jour comparées à la moyenne des 28 jours précédents.
+ * FC repos ≥ moyenne + 7 ou VFC ≤ 75 % → séance intense allégée ; ≥ + 4 ou ≤ 85 % → volume −20 %.
+ */
+export function vitalsImpact(entries, today) {
+  if (!today || !entries || !entries.length) return null
+  const y = isoMinus(today, 1), cur = entries.filter(e => e.day === today || e.day === y).sort((a, b) => b.day.localeCompare(a.day))
+  const base = entries.filter(e => e.day < y && e.day >= isoMinus(today, 29))
+  const avg = k => { const v = base.map(e => e.data && e.data[k]).filter(x => x != null); return v.length >= 5 ? v.reduce((a, b) => a + b, 0) / v.length : null }
+  const val = k => { const e = cur.find(x => x.data && x.data[k] != null); return e ? e.data[k] : null }
+  const r = val('rhr'), rb = avg('rhr'), h = val('hrv'), hb = avg('hrv'), why = []
+  let hard = false, mid = false
+  if (r != null && rb != null) { if (r >= rb + 7) hard = true; else if (r >= rb + 4) mid = true; if (r >= rb + 4) why.push(`FC au repos ${r} bpm (moyenne ${Math.round(rb)})`) }
+  if (h != null && hb != null) { if (h <= hb * 0.75) hard = true; else if (h <= hb * 0.85) mid = true; if (h <= hb * 0.85) why.push(`variabilité cardiaque ${h} ms (moyenne ${Math.round(hb)})`) }
+  if (!hard && !mid) return null
+  return { hard, mid: !hard && mid, why: 'montre : ' + why.join(', ') }
+}

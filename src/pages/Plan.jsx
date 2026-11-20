@@ -6,7 +6,7 @@ import { Page, Sec, List, Row, Seg, Icon, Empty, Sheet, Field, useToast, useLoad
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
 import { buildProgram, wellNorm } from '../lib/program.js'
 import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, runSuggestions, addToWeek, DAYS } from '../lib/plan.js'
-import { gapsOf, duoAdjust, withLevel } from '../lib/gaps.js'
+import { gapsOf, duoAdjust, withLevel, withSelf } from '../lib/gaps.js'
 import { athleteStats, summary, hrBySegment } from '../lib/analyze.js'
 import { predictDuo } from '../lib/predict.js'
 import { customInsights, trainingLoad } from '../lib/load.js'
@@ -31,6 +31,7 @@ export function usePlanData() {
   const doneJ = useLoad(() => api.journal.list('program_done'), [])
   const entry = (planJ.data || [])[0] || null, plan = entry && entry.data
   const lvl = useLoad(() => api.journal.list('level'), [])
+  const vit = useLoad(() => profile.consent_health ? api.journal.list('vitals') : [], [])
   const tplJ = useLoad(() => api.journal.list('weektpl'), [])
   const tplEntry = (tplJ.data || [])[0] || null, template = tplEntry ? tplEntry.data.days : null
   const level = (lvl.data || [])[0] || null
@@ -39,7 +40,8 @@ export function usePlanData() {
   const hr = useLoad(async () => { if (!last || !profile.consent_health) return null; const rows = await api.hr.list(last.id); const r = rows.find(x => x.user_id === profile.id); return r ? hrBySegment(last, r, profile) : null }, [last && last.id])
   const an = useMemo(() => {
     const W = withLevel(athleteStats(profile.id, sessions, plans), ins0.e1rm, level), mine = W.stats
-    const gaps = gapsOf(mine, { profile, e1rm: W.e1rm, weakSt: ins0.weakSt, z5: hr.data ? hr.data.zones[4] : null })
+    const vo2 = ((vit.data || []).find(e => e.data && e.data.vo2) || { data: {} }).data.vo2
+    const gaps = withSelf(gapsOf(mine, { profile, e1rm: W.e1rm, weakSt: ins0.weakSt, z5: hr.data ? hr.data.zones[4] : null, vo2 }), level && level.data && level.data.self)
     const team = race && race.team_id ? teams.find(t => t.id === race.team_id) : null
     const pm = team && team.members.find(m => m.user_id !== profile.id && !m.left_at)
     let duo = null
@@ -51,7 +53,7 @@ export function usePlanData() {
     const goalPace = race && race.goal_seconds ? race.goal_seconds * 0.5 / 8 : null
     const pace = Math.round(goalPace || (mine.pace ? mine.pace * 0.98 : 330))
     return { mine, gaps, duo, pace, e1rm: W.e1rm }
-  }, [sessions, teams, race && race.id, ins0, hr.data, level])
+  }, [sessions, teams, race && race.id, ins0, hr.data, level, vit.data])
   const ins = { ...ins0, e1rm: an.e1rm }
   // séances réalisées par date, cases cochées par semaine
   const byDate = useMemo(() => { const m = {}; sessions.filter(s => isAthlete(s, profile.id) && realDone(s)).forEach(s => { (m[s.session_date] = m[s.session_date] || []).push(s) }); return m }, [sessions])
@@ -63,7 +65,7 @@ export function usePlanData() {
   const prog = plan ? progress(plan, doneOn, today, { ach: ach14, extras, raceChanged }) : null
   const params = (o = {}) => ({ race, from: today, perWeek: o.perWeek || (plan && plan.perWeek) || 4, gaps: an.gaps, duo: an.duo, e1rm: ins.e1rm, pace: an.pace, level: o.level, template: o.template !== undefined ? o.template : template })
   const ready = !planJ.loading && !doneJ.loading && !lvl.loading && !tplJ.loading
-  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, an, ins, level, doneOn, byDate, manual, prog, extras, params, today }
+  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, prog, extras, params, today }
 }
 
 function GapList({ gaps, empty }) {
@@ -147,9 +149,10 @@ export function Program() {
   const cycleDays = isCur && female && (cyc.data || []).length ? week.days.map(d => phaseOn(cyc.data, d.date)) : null
   const crp = ((blood.data || []).find(b => b.data.crp != null) || {}).data
   const sst = sleepStats(sleep.data || [])
-  const adapted = isCur ? buildProgram({ phase: week.phase, baseDays: week.days, cycleDays, perWeek: plan.perWeek, well: well.data || [], todayISO: today, today: (new Date().getDay() + 6) % 7,
+  const adapted = isCur ? buildProgram({ phase: week.phase, baseDays: week.days, cycleDays, perWeek: plan.perWeek, well: well.data || [], vitals: P.vitals, todayISO: today, today: (new Date().getDay() + 6) % 7,
     loadRatio: tl.chronic > 30 ? tl.ratio : null, cycle: female ? cycleInfo(cyc.data || []) : null, crp: crp ? +crp.crp : null, sleepAvg: sst ? sst.avg : null }) : { days: week.days, notes: [week.phase.note] }
-  const ctxOf = d => ({ focus: d.focus, e1rm: ins.e1rm, phase: week.phase.id, factor: week.factor, pace: an.pace, min: d.min })
+  const selfMap = Object.fromEntries(an.gaps.filter(g => g.st && (g.self || g.need)).map(g => [g.st, g.self || { state: g.need }]))
+  const ctxOf = d => ({ focus: d.focus, e1rm: ins.e1rm, phase: week.phase.id, factor: week.factor, pace: an.pace, min: d.min, self: selfMap, prog: weeks.length > 1 ? wi / (weeks.length - 1) : 1 })
   const days = adapted.days.map(d => {
     let blocks = d.blocks || blocksFor(d.key, ctxOf(d)), painNote = null
     if (zones.length && d.key !== 'repos') {
@@ -279,7 +282,7 @@ export function useTodayPlan() {
   if (!P.plan) return null
   const w = P.plan.weeks.find(x => x.start === mondayOf(P.today)); if (!w) return null
   const d = w.days.find(x => x.date === P.today)
-  return d ? { d, phase: w.phase, done: P.doneOn(P.today), prog: P.prog } : null
+  return d ? { d, phase: w.phase, done: P.doneOn(P.today), prog: P.prog, week: w, doneOn: P.doneOn, gaps: P.an.gaps, vitals: P.vitals, today: P.today, created: P.plan.created, wi: P.plan.weeks.indexOf(w), W: P.plan.weeks.length, raceName: P.plan.raceName } : null
 }
 
 /** Semaine type : cours avec coach (fixes), créneaux de renfo libre, repos imposés */

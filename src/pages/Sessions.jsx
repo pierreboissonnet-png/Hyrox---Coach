@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast, Chips } from '../ui.jsx'
 import { DeltaBars } from '../charts.jsx'
 import { SEGS, fmt, fd, frDate, todayISO, tone, normPlan } from '../lib/hyrox.js'
 import { emptyData, normData, split } from '../lib/session.js'
@@ -27,7 +27,7 @@ export function Sessions() {
   const opts = [['all', 'Toutes'], ...teams.map(t => [t.id, t.name]), ['solo', 'Solo']]
   const row = (s, k) => {
     if (isQuick(s)) { const c = customSummary(s), st = c.steps[0] || {}, dn = (st.done || {}); return <Row key={s.id} icon="heart" color="#ff9f0a" title={s.name}
-      sub={`${frDate(s.session_date)} · activité · ${Math.round(c.total / 60)} min${dn.meters ? ' · ' + String(Math.round(dn.meters / 100) / 10).replace('.', ',') + ' km' : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`} href={'#/seance/' + s.id + '/temps'} /> }
+      sub={`${frDate(s.session_date)} · ${s.data.auto ? 'montre' : 'activité'} · ${Math.round(c.total / 60)} min${dn.meters ? ' · ' + String(Math.round(dn.meters / 100) / 10).replace('.', ',') + ' km' : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`} href={'#/seance/' + s.id + '/temps'} /> }
     if (isCustom(s)) { const c = customSummary(s), pl = isPlanned(s); return <Row key={s.id} icon={pl ? 'cal' : 'bolt'} color={k ? '#30d158' : pl ? '#8e8e93' : '#bf5af2'} title={k ? 'Pointage · ' + (athleteNames(s) || s.name) : s.name}
       sub={`${frDate(s.session_date)} · ${pl ? (s.session_date < todayISO() ? 'prévue, non réalisée' : 'prévue') : 'personnalisée'} · ${[...new Set(c.steps.map(exLabel))].slice(0, 3).join(', ')}${c.complete || pl ? '' : ` · ${c.done}/${c.n}`}`}
       value={c.achievement != null ? Math.round(c.achievement * 100) + ' %' : ''} href={'#/seance/' + s.id + (k ? '/chrono' : '')} /> }
@@ -40,7 +40,7 @@ export function Sessions() {
     <button className="btn block" style={{ marginBottom: 10 }} onClick={() => setTrain(true)}><Icon name="plus" size={18} />Nouvelle séance ou activité</button>
     {planned.length > 0 && <Sec title="Prévues"><List>{planned.map(s => <Row key={s.id} icon="cal" color="#5e5ce6" title={s.name} sub={`${s.session_date === todayISO() ? 'Aujourd’hui' : frDate(s.session_date)} · ${[...new Set(customSummary(s).steps.map(exLabel))].slice(0, 3).join(', ')}`} value={s.session_date === todayISO() ? 'Lancer' : ''} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
     {keep.length > 0 && <Sec title="Séances que je pointe"><List>{keep.map(s => row(s, true))}</List></Sec>}
-    {opts.length > 2 && <Seg value={team} onChange={setTeam} options={opts} />}
+    {opts.length > 2 && <Chips value={team} onChange={setTeam} label="Filtrer" options={opts} />}
     {!loaded ? <p className="muted">Chargement…</p> : list.length ? <List>{list.map(s => row(s, false))}</List> : <div className="glass card"><Empty icon="timer">Aucune séance.</Empty></div>}
     {claim && <ClaimSheet onClose={() => setClaim(false)} />}
     {quick && <QuickSheet onClose={() => setQuick(false)} />}
