@@ -174,8 +174,11 @@ export function NewCustom() {
   const zones = activeZones(pains.data || [])
   const mine = activeTeams(teams, profile.id).filter(t => t.members.filter(m => !m.left_at).length === 2)
   const q = new URLSearchParams(location.hash.split('?')[1] || '')
-  const pre = useMemo(() => { try { const pf = JSON.parse(localStorage.getItem('hx-prefill') || 'null'); if (pf) { localStorage.removeItem('hx-prefill'); return Array.isArray(pf) ? { blocks: pf } : pf } } catch {} const t = q.get('tpl') && LIB[q.get('tpl')]; return t ? { blocks: t.blocks, title: t.name } : null }, [])
-  const [f, setF] = useState({ title: (pre && pre.title) || '', format: 'solo', team: mine[0] ? mine[0].id : '', date: q.get('date') || (pre && pre.date) || todayISO(), keeper: null })
+  const { sessions } = useApp()
+  const editing = q.get('edit') ? sessions.find(x => x.id === q.get('edit')) : null   // modifier une séance prévue
+  const pre = useMemo(() => { if (editing) return { blocks: JSON.parse(JSON.stringify(editing.data.blocks || [])), title: editing.name, date: editing.session_date }
+    try { const pf = JSON.parse(localStorage.getItem('hx-prefill') || 'null'); if (pf) { localStorage.removeItem('hx-prefill'); return Array.isArray(pf) ? { blocks: pf } : pf } } catch {} const t = q.get('tpl') && LIB[q.get('tpl')]; return t ? { blocks: t.blocks, title: t.name } : null }, [])
+  const [f, setF] = useState({ title: (pre && pre.title) || '', format: editing && editing.team_id ? 'duo' : 'solo', team: (editing && editing.team_id) || (mine[0] ? mine[0].id : ''), date: q.get('date') || (pre && pre.date) || todayISO(), keeper: null })
   const [blocks, setBlocks] = useState(() => (pre && pre.blocks && pre.blocks.length) ? pre.blocks : [newBlock('run'), newBlock('ski'), newBlock('wb')])
   const [err, setErr] = useState(''), [lib, setLib] = useState(q.get('lib') === '1'), [adding, setAdding] = useState(false)
   const team = f.format === 'duo' ? mine.find(t => t.id === f.team) : null
@@ -209,6 +212,13 @@ export function NewCustom() {
     if (!f.date) return setErr('Choisissez une date')
     const bl = blocks.map(b => isGroup(b) ? { ...b, w: team ? b.w || 'A' : 'A' } : { ...b, sets: Math.max(1, +b.sets || 1), w: team ? b.w : 'A' })
     try {
+      if (editing) {   // séance prévue modifiée : même séance, nouveaux exercices
+        await api.sessions.save({ id: editing.id, team_id: team ? team.id : null, session_date: f.date, name: f.title.trim() || editing.name, athletes: team ? slotsOf(team) : { A: user.id, B: null },
+          names: { A: names.A, B: team ? names.B : null }, data: { ...emptyCustom(bl, f.title.trim()), ...(editing.data.planDay ? { planDay: editing.data.planDay } : {}) } })
+        await reload(['sessions'])
+        if (mode === 'plan') { toast('Séance modifiée'); go('#/seances', true) } else go('#/seance/' + editing.id + (mode === 'live' ? '/chrono' : '/temps'), true)
+        return
+      }
       const s = await api.sessions.save({ owner: user.id, team_id: team ? team.id : null, kind: 'entrainement', session_date: f.date,
         name: f.title.trim() || 'Séance du ' + frDate(f.date).slice(0, 5), athletes: team ? slotsOf(team) : { A: user.id, B: null },
         names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: { ...emptyCustom(bl, f.title.trim()), ...(q.get('plan') ? { planDay: q.get('plan') } : {}) } })
@@ -217,7 +227,7 @@ export function NewCustom() {
       else go('#/seance/' + s.id + (mode === 'live' ? '/chrono' : '/temps'), true)
     } catch (e) { setErr(e.message) }
   }
-  return <Page back={q.get('back') || '#/seances'} title="Séance personnalisée" subtitle="Renfo, course, ateliers, circuits… avec vos objectifs. Planifiez-la ou lancez-la tout de suite.">
+  return <Page back={q.get('back') || '#/seances'} title={editing ? 'Modifier la séance' : 'Séance personnalisée'} subtitle={editing ? 'Séance prévue le ' + frDate(editing.session_date) + ' : changez les exercices, la date ou le titre.' : 'Renfo, course, ateliers, circuits… avec vos objectifs. Planifiez-la ou lancez-la tout de suite.'}>
     <button className="btn tinted block" onClick={() => setLib(true)}><Icon name="cal" size={18} />Bibliothèque : séances types et mes modèles</button>
     <h2 className="sec">Séance</h2>
     <Seg value={f.format} onChange={v => setF({ ...f, format: v })} options={[['solo', 'Solo'], ['duo', 'Duo']]} />
@@ -244,7 +254,7 @@ export function NewCustom() {
     <KeeperPicker value={f.keeper} onChange={k => setF({ ...f, keeper: k })} exclude={[user.id]} />
     {err && <p className="err">{err}</p>}
     {future
-      ? <><button className="btn block" style={{ marginTop: 16 }} onClick={() => create('plan')}><Icon name="cal" size={18} />Planifier le {frDate(f.date).slice(0, 5)}</button>
+      ? <><button className="btn block" style={{ marginTop: 16 }} onClick={() => create('plan')}><Icon name="cal" size={18} />{editing ? 'Enregistrer (le ' + frDate(f.date).slice(0, 5) + ')' : 'Planifier le ' + frDate(f.date).slice(0, 5)}</button>
         <button className="btn glass block" style={{ marginTop: 8 }} onClick={saveTpl}>Enregistrer comme modèle</button></>
       : <><button className="btn block" style={{ marginTop: 16 }} onClick={() => create('live')}><Icon name="play" size={18} />Lancer le chrono</button>
         <div className="row-gap" style={{ marginTop: 8 }}>

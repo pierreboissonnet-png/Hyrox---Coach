@@ -9,12 +9,17 @@ import { EX } from '../lib/custom.js'
 import { quickSession } from '../lib/activity.js'
 export { quickSession }
 
-export const ACTIVITIES = ['run', 'bike', 'swim', 'row', 'ski', 'walk', 'hike', 'elliptical', 'strength', 'teamsport', 'racket', 'climbing', 'combat', 'winter', 'yoga', 'mobility', 'other']
+// Uniquement ce qui sert la prépa Hyrox (les autres sports restent lisibles sur les anciennes saisies, via « Autre activité »)
+export const ACTIVITIES = ['run', 'bike', 'airbike', 'row', 'ski', 'elliptical', 'stairs', 'swim', 'walk', 'hike', 'rope', 'strength', 'mobility', 'yoga', 'other']
 const DIST = ['run', 'bike', 'swim', 'row', 'ski', 'walk', 'hike']
 
-export function QuickSheet({ onClose, date: d0 }) {
+export function QuickSheet({ onClose, date: d0, session }) {
   const { user, profile, reload } = useApp(), toast = useToast()
-  const [f, setF] = useState({ ex: 'run', name: '', date: d0 || todayISO(), dur: '45', km: '', rpe: 6, hr: '', note: '' })
+  const init = () => { if (!session) return { ex: 'run', name: '', date: d0 || todayISO(), dur: '45', km: '', rpe: 6, hr: '', note: '' }
+    const st = (session.data.steps || [])[0] || {}, dn = st.done || {}
+    return { ex: st.ex || 'other', name: st.ex === 'other' || ['teamsport', 'strength'].includes(st.ex) ? (session.name !== (EX[st.ex] || {}).label ? session.name : '') : '', date: session.session_date,
+      dur: dn.time ? String(Math.round(dn.time / 60)) : '', km: dn.meters ? String(Math.round(dn.meters / 10) / 100).replace('.', ',') : '', rpe: dn.rpe || 6, hr: session.data.avgHR ? String(session.data.avgHR) : '', note: session.data.note || '' } }
+  const [f, setF] = useState(init)
   const [err, setErr] = useState(''), [busy, setBusy] = useState(false)
   async function save() {
     setErr('')
@@ -25,17 +30,19 @@ export function QuickSheet({ onClose, date: d0 }) {
     if (f.date > todayISO()) return setErr('Pour une séance à venir, utilisez « Planifier une séance ».')
     setBusy(true)
     try {
-      await api.sessions.save(quickSession({ uid: user.id, name: f.ex === 'other' ? f.name.trim() || 'Activité' : f.name.trim(), ex: f.ex, date: f.date, minutes: t, km, rpe: f.rpe, avgHR: hr, note: f.note }))
-      await reload(['sessions']); toast('Activité ajoutée'); onClose(true)
+      const q = quickSession({ uid: user.id, name: f.ex === 'other' ? f.name.trim() || 'Activité' : f.name.trim(), ex: f.ex, date: f.date, minutes: t, km, rpe: f.rpe, avgHR: hr, note: f.note })
+      if (session) await api.sessions.save({ id: session.id, name: q.name, session_date: q.session_date, data: { ...session.data, ...q.data, ...(session.data.auto ? { auto: true, extId: session.data.extId, startMs: session.data.startMs, kcal: session.data.kcal } : {}) } })
+      else await api.sessions.save(q)
+      await reload(['sessions']); toast(session ? 'Activité modifiée' : 'Activité ajoutée'); onClose(true)
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
   const pace = DIST.includes(f.ex) && parseNum(f.km) && parseNum(f.dur) ? parseNum(f.dur) * 60 / parseNum(f.km) : null
-  return <Sheet title="Activité en plus du plan" onClose={() => onClose(false)} actions={<button className="btn plain" onClick={save} disabled={busy}>Ajouter</button>}
-    footer={<button className="btn block" onClick={save} disabled={busy}>{busy ? 'Enregistrement…' : 'Ajouter l’activité'}</button>}>
-    <p className="small muted" style={{ marginTop: 0 }}>Footing, vélo, match, séance de renfo à la salle… Elle compte dans votre charge d’entraînement, la dépense du jour et le suivi du plan.</p>
+  return <Sheet title={session ? 'Modifier l’activité' : 'Activité en plus du plan'} onClose={() => onClose(false)} actions={<button className="btn plain" onClick={save} disabled={busy}>{session ? 'OK' : 'Ajouter'}</button>}
+    footer={<button className="btn block" onClick={save} disabled={busy}>{busy ? 'Enregistrement…' : session ? 'Enregistrer les modifications' : 'Ajouter l’activité'}</button>}>
+    <p className="small muted" style={{ marginTop: 0 }}>Footing, vélo, rameur, séance de renfo à la salle… Elle compte dans votre charge d’entraînement, la dépense du jour et le suivi du plan.</p>
     <List>
-      <Field label="Activité"><select value={f.ex} onChange={e => setF({ ...f, ex: e.target.value })}>{ACTIVITIES.map(id => <option key={id} value={id}>{EX[id].label}</option>)}</select></Field>
-      {(f.ex === 'other' || f.ex === 'teamsport' || f.ex === 'strength') && <Field label="Nom" sub="Facultatif"><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder={f.ex === 'teamsport' ? 'Match de foot' : f.ex === 'strength' ? 'Renfo salle' : 'Paddle'} /></Field>}
+      <Field label="Activité"><select value={f.ex} onChange={e => setF({ ...f, ex: e.target.value })}>{(ACTIVITIES.includes(f.ex) ? ACTIVITIES : [...ACTIVITIES, f.ex]).map(id => <option key={id} value={id}>{EX[id].label}</option>)}</select></Field>
+      {(f.ex === 'other' || f.ex === 'teamsport' || f.ex === 'strength') && <Field label="Nom" sub="Facultatif"><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder={f.ex === 'teamsport' ? 'Match de foot' : f.ex === 'strength' ? 'Renfo salle' : 'Cours de cross training'} /></Field>}
       <Field label="Date"><input type="date" value={f.date} max={todayISO()} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
       <Field label="Durée" sub="minutes, ou h:mm:ss"><input inputMode="decimal" value={f.dur} onChange={e => setF({ ...f, dur: e.target.value })} /></Field>
       {DIST.includes(f.ex) && <Field label="Distance (km)" sub={pace ? (f.ex === 'run' || f.ex === 'walk' || f.ex === 'hike' ? 'allure ' + fmt(pace) + '/km' : '') : 'Facultatif'}><input inputMode="decimal" value={f.km} onChange={e => setF({ ...f, km: e.target.value })} /></Field>}

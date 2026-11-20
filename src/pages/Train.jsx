@@ -30,7 +30,8 @@ export function TrainSheet({ onClose, tp }) {
     </List>
     <h2 className="sec">Autre</h2>
     <List>
-      <Row icon="plus" color="#ff9f0a" title="Ajouter une activité déjà faite" sub="Footing, vélo, match, renfo à la salle…" onClick={() => setQuick(true)} />
+      <Row icon="plus" color="#ff9f0a" title="Ajouter une activité déjà faite" sub="Footing, vélo, rameur, renfo à la salle…" onClick={() => setQuick(true)} />
+      <Row icon="flag" color="#0a84ff" title="Ajouter un Hyrox déjà fait" sub="Simulation ou course : temps des segments et ressenti" href="#/seance/nouvelle?apres=1" />
       <Row icon="cal" color="#8e8e93" title="Planifier pour un autre jour" sub="Pré-enregistrer une séance" href={'#/seance/specifique?date=' + tomorrow()} />
       <Row icon="timer" color="#30d158" title="Pointer un athlète" sub="Avec le code affiché sur son téléphone" onClick={() => setClaim(true)} />
     </List>

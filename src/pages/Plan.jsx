@@ -5,7 +5,8 @@ import { api } from '../lib/api.js'
 import { Page, Sec, List, Row, Seg, Icon, Empty, Sheet, Field, useToast, useLoad } from '../ui.jsx'
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
 import { buildProgram, wellNorm } from '../lib/program.js'
-import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, runSuggestions, addToWeek, DAYS } from '../lib/plan.js'
+import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, COACH_INFO, COACH_RPE, runSuggestions, addToWeek, DAYS, skipCoach, restoreCoach } from '../lib/plan.js'
+import { quickSession } from '../lib/activity.js'
 import { gapsOf, duoAdjust, withLevel, withSelf } from '../lib/gaps.js'
 import { athleteStats, summary, hrBySegment } from '../lib/analyze.js'
 import { predictDuo } from '../lib/predict.js'
@@ -77,7 +78,7 @@ function GapList({ gaps, empty }) {
 }
 
 export function Program() {
-  const { profile, sessions, teams } = useApp(), toast = useToast()
+  const { profile, sessions, teams, reload } = useApp(), toast = useToast()
   const P = usePlanData(), { race, plan, entry, an, ins, doneOn, byDate, prog, today } = P
   const [perWeek, setPerWeek] = useState((plan && plan.perWeek) || 4)
   const [notesOpen, setNotesOpen] = useState(false), [sel, setSel] = useState(null), [busy, setBusy] = useState(false), [quick, setQuick] = useState(false), [showDuo, setShowDuo] = useState(false)
@@ -172,6 +173,15 @@ export function Program() {
     const next = manualIdx.includes(i) ? manualIdx.filter(x => x !== i) : [...manualIdx, i].sort()
     try { if (row) await api.journal.update(row.id, { data: { done: next } }); else await api.journal.add({ kind: 'program_done', day: week.start, data: { done: next } }); P.doneJ.reload() } catch (e) { toast(e.message) }
   }
+  const coachDone = d => (byDate[d.date] || []).some(x => x.data && x.data.planCoach === d.date + ':' + (d.slot || 1))
+  async function markCoach(d) {
+    if (coachDone(d)) return
+    try {
+      const c = d.coach || {}, q = quickSession({ uid: profile.id, name: d.title.replace(' (avec coach)', ''), ex: (COACH_INFO[c.act] || COACH_INFO.autre).ex, date: d.date, minutes: d.min || 60, rpe: COACH_RPE[c.intensity] || 6, note: 'Cours avec coach' })
+      if (q.data.steps[0].ex === 'other' || q.data.steps[0].ex === 'strength' || q.data.steps[0].ex === 'yoga') q.data.steps[0].name = q.name
+      await api.sessions.save({ ...q, data: { ...q.data, planCoach: d.date + ':' + (d.slot || 1), coach: true } }); await reload(['sessions']); toast('Cours enregistré : il compte dans votre charge et votre dépense du jour')
+    } catch (e) { toast(e.message) }
+  }
   function launch(d) {
     try { localStorage.setItem('hx-prefill', JSON.stringify({ blocks: d.blocks, title: d.title, date: d.date })) } catch {}
     location.hash = '#/seance/specifique?date=' + d.date + '&plan=' + d.date + '&back=' + encodeURIComponent('#/moi/programme')
@@ -194,8 +204,9 @@ export function Program() {
       <div className="small muted">{done && d.key !== 'repos' ? '✓ Validée' + (byDate[d.date] ? ' : ' + byDate[d.date].map(x => x.name).join(', ') : '') : d.detail}</div>
       {d.adapted && <div className="small muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</div>}
       {d.painNote && <div className="small" style={{ color: 'var(--warn, #ff9f0a)' }}>⚠ {d.painNote}</div>}
-      <div className="row-gap" style={{ marginTop: 10 }}>{done ? <a className="btn glass" href="#/moi/etirements"><Icon name="leaf" size={18} />Étirements</a> : actions(d, pl, true)}
-        {!done && d.key !== 'repos' && <button className="btn glass" onClick={() => setQuick(true)}>Fait autre chose</button>}</div>
+      <div className="row-gap" style={{ marginTop: 10 }}>{done ? <a className="btn glass" href="#/moi/etirements"><Icon name="leaf" size={18} />Étirements</a> : d.key === 'coach' ? <button className="btn" onClick={() => markCoach(d)}><Icon name="play" size={18} />C’est fait</button> : actions(d, pl, true)}
+        {!done && d.key === 'coach' && <button className="btn glass" disabled={busy} onClick={() => save(skipCoach(plan, d.date, d.slot, { pace: an.pace, e1rm: ins.e1rm, self: selfMap }), 'Séance du plan proposée à la place du cours')}>Pas de cours</button>}
+        {!done && d.key !== 'repos' && d.key !== 'coach' && <button className="btn glass" onClick={() => setQuick(true)}>Fait autre chose</button>}</div>
     </div> })()}
     <div className="glass card">
       <div className="row-gap small"><b>Plan : {prog.doneAll}/{prog.total} séances</b><span className="spacer" />{prog.adh != null && <span className="muted">assiduité {Math.round(prog.adh * 100)} %</span>}</div>
@@ -220,9 +231,10 @@ export function Program() {
       {adapted.notes.length > 1 && <button className="btn plain small" onClick={() => setNotesOpen(o => !o)}>{notesOpen ? 'Masquer' : 'Voir'} les {adapted.notes.length - 1} adaptation(s) de la semaine</button>}
       {notesOpen && adapted.notes.slice(1).map((n, i) => <div className="tip" key={i}><span className="dot bad" /><span className="small">{n}</span></div>)}
     </div>}
-    <List>{days.map((d, i) => { const done = doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date + '-' + (d.slot || 1)} style={isToday ? { background: 'var(--accent-soft)' } : null}>
+    <List>{days.map((d, i) => { const done = d.key === 'coach' ? coachDone(d) : doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date + '-' + (d.slot || 1)} style={isToday ? { background: 'var(--accent-soft)' } : null}>
       <div className="row-gap"><b>{d.day}</b><span className="small muted">{frDate(d.date).slice(0, 5)}</span>{isToday && <span className="badge accent">Aujourd’hui</span>}{d.duo && <span className="badge">duo</span>}{d.key === 'coach' && <span className="badge" style={{ background: '#ff9f0a33' }}>coach</span>}{d.added && <span className="badge">ajoutée</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
-        {d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là' : 'Cocher quand la séance est faite'}>
+        {d.key === 'coach' ? (coachDone(d) ? <span className="badge good">Fait ✓</span> : d.date <= today && <button className="btn tinted small" onClick={() => markCoach(d)}>C’est fait</button>)
+        : d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là' : 'Cocher quand la séance est faite'}>
           <input type="checkbox" checked={done} disabled={auto} onChange={() => toggle(i, d)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
       <div style={{ fontWeight: 600, textDecoration: done && d.key !== 'repos' ? 'line-through' : 'none', opacity: done && d.key !== 'repos' ? .65 : 1 }}>{d.title}</div>
       <div className="small muted">{d.detail}</div>
@@ -230,18 +242,25 @@ export function Program() {
       {d.cycle && <div className="small" style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><span className="badge" style={{ background: PHASE_COLOR[d.cycle.phase] + '33', color: 'var(--ink)', flexShrink: 0 }}>J{d.cycle.day} · {PHASE_LABEL[d.cycle.phase]}</span>{d.adapted && <span className="muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</span>}</div>}
       {d.adapted && !d.cycle && <div className="small muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</div>}
       {d.painNote && <div className="small" style={{ color: 'var(--warn, #ff9f0a)' }}>⚠ {d.painNote}</div>}
-      {auto && <div className="tiny muted">Validée : {byDate[d.date].map(s => s.name).join(', ')}</div>}
-      {!done && d.date >= today && <div className="row-gap" style={{ gap: 6 }}>{actions(d, pl)}</div>}
+      {auto && <div className="tiny muted">Validée : {byDate[d.date].map((x, k) => <React.Fragment key={x.id}>{k ? ', ' : ''}<a className="link" href={'#/seance/' + x.id}>{x.name}</a></React.Fragment>)} <span className="faint">(touchez pour voir ou modifier)</span></div>}
+      {!done && d.date >= today && <div className="row-gap" style={{ gap: 6, flexWrap: 'wrap' }}>{actions(d, pl)}
+        {d.key === 'coach' && <button className="btn glass small" disabled={busy} onClick={() => save(skipCoach(plan, d.date, d.slot, { pace: an.pace, e1rm: ins.e1rm, self: selfMap }), 'Séance du plan proposée à la place du cours')}>Je ne vais pas au cours</button>}
+        {d.coachSkipped && <button className="btn glass small" disabled={busy} onClick={() => save(restoreCoach(plan, d.date, d.slot), 'Cours remis au programme')}>Remettre le cours</button>}</div>}
     </div> })}</List>
-    {isCur && (() => { const R = runSuggestions({ week: { ...week, days }, doneOn, today, gaps: an.gaps, pace: an.pace }); return R.list.length > 0 && <div className="glass card">
-      <b>Ajouter une course cette semaine ?</b>
-      <div className="small muted">{R.ratio < 0.6 ? 'Quelques séances manquées : une sortie facile remet dans le rythme, sans surcharge.' : 'D’après la semaine faite, il reste de la place pour :'}</div>
-      {R.list.map((x, k) => <div key={k} className="row stack" style={{ padding: '8px 0' }}>
-        <div className="row-gap"><b>{x.title}</b><span className="spacer" /><span className="badge">{x.zone}</span><span className="small muted">{x.min} min</span></div>
-        <div className="small muted">{x.detail}</div>
-        <div className="row-gap" style={{ gap: 6, flexWrap: 'wrap' }}>{R.days.map(dd => <button key={dd.date} className="btn tinted small" disabled={busy} onClick={() => save(addToWeek(plan, week.start, dd.date, x), x.title + ' ajouté ' + (dd.date === today ? 'aujourd’hui' : 'le ' + dd.day.toLowerCase()))}>+ {dd.date === today ? 'Aujourd’hui' : dd.day}</button>)}</div>
-      </div>)}
-    </div> })()}
+    {isCur && (() => { const R = runSuggestions({ week: { ...week, days }, doneOn, today, gaps: an.gaps, pace: an.pace, e1rm: ins.e1rm, self: selfMap }); if (!R.list.length) return null
+      const best = R.list[0], d0 = R.days[0]
+      return <div className="glass card">
+        <b>Ajouter une séance cette semaine ?</b>
+        <div className="small muted">{R.ratio < 0.6 ? 'Quelques séances manquées : une sortie facile remet dans le rythme, sans surcharge.' : 'Calculé d’après le plan, votre bilan et la semaine déjà faite.'}</div>
+        <button className="btn block" style={{ margin: '10px 0 4px' }} disabled={busy} onClick={() => save(addToWeek(plan, week.start, d0.date, best), best.title + ' ajouté ' + (d0.date === today ? 'aujourd’hui' : 'le ' + d0.day.toLowerCase()))}>
+          <Icon name="plus" size={18} />Ajouter « {best.title} » {d0.date === today ? 'aujourd’hui' : d0.day.toLowerCase()}</button>
+        <details><summary className="small" style={{ cursor: 'pointer', padding: '6px 0' }}>Autres propositions et autres jours</summary>
+        {R.list.map((x, k) => <div key={k} className="row stack" style={{ padding: '8px 0' }}>
+          <div className="row-gap"><b>{x.title}</b><span className="spacer" /><span className="badge">{x.kind === 'course' ? 'course' : x.kind === 'hyrox' ? 'Hyrox' : 'renfo'}</span><span className="small muted">{x.min} min</span></div>
+          <div className="small muted">{x.detail}{x.why ? ' · ' + x.why : ''}</div>
+          <div className="row-gap" style={{ gap: 6, flexWrap: 'wrap' }}>{R.days.map(dd => <button key={dd.date} className="btn tinted small" disabled={busy} onClick={() => save(addToWeek(plan, week.start, dd.date, x), x.title + ' ajouté ' + (dd.date === today ? 'aujourd’hui' : 'le ' + dd.day.toLowerCase()))}>+ {dd.date === today ? 'Aujourd’hui' : dd.day}</button>)}</div>
+        </div>)}</details>
+      </div> })()}
     <button className="btn glass block" style={{ marginTop: 10 }} onClick={() => setQuick(true)}><Icon name="plus" size={18} />Ajouter une séance faite en plus du plan</button>
 
     <h2 className="sec">Lacunes travaillées</h2>

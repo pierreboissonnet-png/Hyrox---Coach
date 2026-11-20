@@ -28,6 +28,26 @@ export function parseDate(x: unknown): number | null {
   const t = Date.parse(s); return isNaN(t) ? null : t
 }
 const list = (x: unknown): unknown[] => Array.isArray(x) ? x : typeof x === 'string' ? x.split(/\r?\n/).map(v => v.trim()).filter(v => v !== '') : []
+
+/** Noms de champs tolérants (majuscules, accents, espaces, singulier/français) : « Starts », « start », « début », « Valeur »… */
+const FIELD_ALIASES: Record<string, string> = { start: 'starts', starts: 'starts', startdate: 'starts', startdates: 'starts', debut: 'starts', debuts: 'starts', datededebut: 'starts',
+  end: 'ends', ends: 'ends', enddate: 'ends', enddates: 'ends', fin: 'ends', fins: 'ends', datedefin: 'ends', value: 'values', values: 'values', valeur: 'values', valeurs: 'values', date: 'dates', dates: 'dates' }
+export function normBody(body: any): any {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+  const out: any = {}
+  for (const k of Object.keys(body)) {
+    const n = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[\s_-]+/g, '')
+    const key = FIELD_ALIASES[n] || (k.trim() === k ? k : k.trim())
+    if (out[key] == null) out[key] = body[k]
+  }
+  return out
+}
+/** Résumé de ce qui a été reçu (pour diagnostiquer un raccourci) : nom du champ → nombre d'éléments */
+export function received(body: any): Record<string, number | string> {
+  const r: Record<string, number | string> = {}
+  for (const k of Object.keys(body || {})) { if (k === 'token') continue; const v = body[k]; r[k] = v && typeof v === 'object' && !Array.isArray(v) ? 'objet' : list(v).length }
+  return r
+}
 const num = (x: unknown) => { const v = parseFloat(String(x).replace(',', '.').replace(/[^\d.\-]/g, '')); return isFinite(v) ? v : null }
 
 /** Extrait les mesures de FC et les plages de sommeil, quel que soit l'expéditeur */
@@ -71,12 +91,13 @@ export function spreadMinutes(hr: Sample[]): Sample[] {
 
 /** Catégorie d'une plage de sommeil (valeurs anglaises ou françaises de Santé) */
 export function sleepKind(v: string): 'deep' | 'rem' | 'core' | 'asleep' | 'awake' | 'inbed' {
-  const s = v.toLowerCase()
+  const s = String(v ?? '').toLowerCase().trim()
+  if (/^\d+$/.test(s)) { const n = +s; return n === 0 ? 'inbed' : n === 2 ? 'awake' : n === 3 ? 'core' : n === 4 ? 'deep' : n === 5 ? 'rem' : 'asleep' }   // codes HealthKit
   if (/awake|éveil|eveil/.test(s)) return 'awake'
   if (/inbed|in bed|au lit/.test(s)) return 'inbed'
   if (/deep|profond/.test(s)) return 'deep'
   if (/rem|paradox/.test(s)) return 'rem'
-  if (/core|léger|leger|essentiel/.test(s)) return 'core'
+  if (/core|léger|leger|essentiel|principal/.test(s)) return 'core'
   return 'asleep'
 }
 
@@ -86,19 +107,20 @@ export function nights(recs: SleepRec[], tzMin = 60) {
   const loc = (t: number) => new Date(t + tzMin * 6e4).toISOString()
   for (const { a, b, v } of recs) {
     const k = sleepKind(v), end = loc(b), day = end.slice(0, 10), hour = +end.slice(11, 13), m = (b - a) / 6e4
-    const n = N[day] || (N[day] = { iv: [], deep: 0, rem: 0, core: 0, awake: 0, nap: 0, start: null, end: null })
+    const n = N[day] || (N[day] = { iv: [], inb: [], deep: 0, rem: 0, core: 0, awake: 0, nap: 0, start: null, end: null })
     const asleep = k !== 'awake' && k !== 'inbed'
     if (asleep && hour >= 13) { n.nap += m; continue }
     if (asleep) { n.iv.push([a, b]); if (k === 'deep') n.deep += m; if (k === 'rem') n.rem += m; if (k === 'core') n.core += m }
     if (k === 'awake') n.awake += m
+    if (k === 'inbed' && hour < 13) n.inb.push([a, b])
     if (k !== 'awake') { if (n.start == null || a < n.start) n.start = a; if (n.end == null || b > n.end) n.end = b }
   }
   return Object.entries(N).map(([day, n]) => {
-    const iv = n.iv.sort((x: number[], y: number[]) => x[0] - y[0]); let tot = 0, cur: number[] | null = null
+    const iv = (n.iv.length ? n.iv : n.inb).sort((x: number[], y: number[]) => x[0] - y[0]); let tot = 0, cur: number[] | null = null
     for (const [a, b] of iv) { if (!cur || a > cur[1]) { if (cur) tot += cur[1] - cur[0]; cur = [a, b] } else cur[1] = Math.max(cur[1], b) }
     if (cur) tot += cur[1] - cur[0]
     return { day, data: { asleep: Math.round(tot / 6e4), deep: Math.round(n.deep) || null, rem: Math.round(n.rem) || null, core: Math.round(n.core) || null, awake: Math.round(n.awake) || null, nap: Math.round(n.nap) || null,
-      bed: n.start ? loc(n.start).slice(11, 16) : null, wake: n.end ? loc(n.end).slice(11, 16) : null } }
+      bed: n.start ? loc(n.start).slice(11, 16) : null, wake: n.end ? loc(n.end).slice(11, 16) : null, ...(n.iv.length ? {} : { inBedOnly: true }) } }
   }).filter(x => x.data.asleep >= 60)
 }
 
@@ -178,6 +200,15 @@ export function extractMetrics(body: any): Metrics {
     }
   }
   return out
+}
+/** Mesures en double : deux types différents avec exactement les mêmes dates et valeurs = variable mal reliée dans le raccourci
+ *  (ex. « weight_values » qui lit la recherche « FC au repos »). On les écarte au lieu d'enregistrer un poids de 52 kg. */
+export function dropDuplicates(m: Record<string, [number, number][]>): string[] {
+  const keys = Object.keys(m).filter(k => k !== 'flow' && m[k].length), sig = (k: string) => JSON.stringify([...m[k]].sort((a, b) => a[0] - b[0]))
+  const bad = new Set<string>()
+  for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) if (sig(keys[i]) === sig(keys[j])) { bad.add(keys[i]); bad.add(keys[j]) }
+  bad.forEach(k => delete m[k])
+  return [...bad]
 }
 const dayOf = (t: number, tzMin: number) => new Date(t + tzMin * 6e4).toISOString().slice(0, 10)
 /** Agrégat par jour local : pas et énergie additionnés, poids/VO2 = dernière valeur, FC repos = min, VFC/resp = moyenne */

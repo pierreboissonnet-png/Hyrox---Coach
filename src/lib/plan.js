@@ -141,7 +141,7 @@ export function generateWeeks(o) {
     const mk = (pk, i, label, slot) => {
       const key = pk.key, date = addDays(ws, i)
       if (key === 'coach') { const t = pk.coach, cl = (COACH_ACTS.find(a => a[0] === t.act) || [0, 'Cours'])[1]
-        return { date, day: label, key, title: (t.label || cl) + ' (avec coach)', detail: 'Séance encadrée par votre coach' + (pk.replaces ? ` : elle remplace « ${describe(pk.replaces, { phase: ph.id, factor })[0]} » du plan.` : '.') + ' Cochez « Fait » une fois terminée.', zone: COACH_ZONE[t.intensity] || 'Z3', min: +t.min || 60, focus: [], duo: false, blocks: null, coach: { act: t.act, intensity: t.intensity || 'modere' }, fixed: true, slot } }
+        return { date, day: label, key, title: (t.label || cl) + ' (avec coach)', detail: `${(COACH_INFO[t.act] || COACH_INFO.autre).what.replace(/^./, c => c.toUpperCase())}, ${+t.min || 60} min. Rien d’autre à prévoir pour ce créneau.` + (pk.replaces ? ` Il compte pour « ${describe(pk.replaces, { phase: ph.id, factor })[0]} » dans le plan.` : ''), zone: COACH_ZONE[t.intensity] || 'Z3', min: +t.min || 60, focus: [], duo: false, blocks: null, coach: { act: t.act, intensity: t.intensity || 'modere' }, fixed: true, slot, replaces: pk.replaces || null } }
       const isDuo = !!duoKey && key === duoKey
       const ctx = { focus: isDuo ? [...new Set([...(duo.focus || []), ...focus])] : focus, e1rm: o.e1rm, phase: ph.id, factor, pace: o.pace, duo: isDuo, partner: duo && duo.partner, self, prog: W > 1 ? w / (W - 1) : 1 }
       let min = r5(BASE_MIN[key] * (key === 'repos' ? 1 : factor) + (engineGap && key === 'z2' ? 10 : 0))
@@ -159,11 +159,41 @@ export function generateWeeks(o) {
   return weeks
 }
 
+/**
+ * Cours avec coach non suivi ce jour-là : l'app propose la séance du plan qu'il remplaçait (ou de l'endurance facile).
+ * Annulable avec restoreCoach. ctx : {pace, e1rm, self}
+ */
+export function skipCoach(plan, date, slot, ctx = {}) {
+  return { ...plan, weeks: plan.weeks.map(w => ({ ...w, days: w.days.map(d => {
+    if (d.date !== date || d.key !== 'coach' || (d.slot || 1) !== (slot || 1)) return d
+    const key = d.replaces || 'z2', c = { focus: w.focus, phase: w.phase.id, factor: w.factor, pace: ctx.pace, e1rm: ctx.e1rm, self: ctx.self, prog: 0.5 }
+    const min = r5(BASE_MIN[key] * w.factor); c.min = min
+    const [title, detail] = describe(key, c)
+    return { ...d, key, title, detail: 'Pas de cours ce jour-là : séance du plan à la place. ' + detail, zone: ZONE[key], min, blocks: blocksFor(key, c), fixed: false, coachSkipped: { title: d.title, detail: d.detail, zone: d.zone, min: d.min, coach: d.coach, replaces: d.replaces } }
+  }) })), log: [...(plan.log || []), { date, text: 'Cours avec coach non suivi le ' + date.split('-').reverse().slice(0, 2).join('/') + ' : séance du plan à la place.' }].slice(-20) }
+}
+export function restoreCoach(plan, date, slot) {
+  return { ...plan, weeks: plan.weeks.map(w => ({ ...w, days: w.days.map(d => d.date !== date || !d.coachSkipped || (d.slot || 1) !== (slot || 1) ? d
+    : { ...d, ...d.coachSkipped, key: 'coach', blocks: null, fixed: true, coachSkipped: undefined }) })) }
+}
+
 /** Lacunes principales (sans la mention « données insuffisantes ») : sert à détecter un changement */
 export const gapLabels = gaps => (gaps || []).filter(g => g.kind !== 'test').slice(0, 4).map(g => g.label)
 
 // --------------------------------------------------------------- semaine type
 // template[i] (lundi = 0) : {type: 'free' | 'coach' | 'renfo' | 'rest', act, label, min, intensity: 'facile' | 'modere' | 'intense'}
+// Ce que l'app comprend de chaque cours (effet d'entraînement et activité enregistrée quand il est fait)
+export const COACH_INFO = {
+  spinning: { what: 'vélo d’intérieur en groupe, en musique : intervalles et côtes, surtout du cardio (zones 3 à 4)', ex: 'bike' },
+  crosstraining: { what: 'circuits fonctionnels (charges, sauts, rameur…) proches des ateliers Hyrox', ex: 'strength' },
+  renfo: { what: 'renforcement musculaire guidé (poids du corps, haltères, barre)', ex: 'strength' },
+  course: { what: 'séance de course encadrée (fractionné ou endurance)', ex: 'run' },
+  natation: { what: 'natation : cardio sans impact, bonne récupération active', ex: 'swim' },
+  hyrox: { what: 'travail des ateliers Hyrox et enchaînements course-atelier', ex: 'strength' },
+  yoga: { what: 'mobilité et souplesse : récupération', ex: 'yoga' },
+  autre: { what: 'cours encadré', ex: 'other' },
+}
+export const COACH_RPE = { facile: 4, modere: 6, intense: 8 }
 export const COACH_ACTS = [['spinning', 'Spinning / RPM'], ['crosstraining', 'Cross-training / circuit'], ['renfo', 'Renforcement / body pump'], ['course', 'Course en club'], ['natation', 'Natation'], ['hyrox', 'Cours Hyrox'], ['yoga', 'Yoga / pilates'], ['autre', 'Autre cours']]
 const COACH_KEY = { spinning: ['z2', 'seuil'], crosstraining: ['compromis', 'ateliers', 'force'], renfo: ['force'], course: ['seuil', 'z2', 'allure'], natation: ['z2'], hyrox: ['compromis', 'ateliers', 'simu'], yoga: [], autre: [] }
 const COACH_ZONE = { facile: 'Z2', modere: 'Z3', intense: 'Z4' }
@@ -199,21 +229,26 @@ export function placeKeys(keys, perWeek, template) {
  */
 export function runSuggestions(o) {
   const { week, doneOn, today } = o
-  const freeDays = week.days.filter(d => d.key === 'repos' && d.date >= today && !d.fixed)
+  const freeDays = week.days.filter(d => d.key === 'repos' && (d.slot || 1) === 1 && d.date >= today && !d.fixed && !week.days.some(x => x.date === d.date && x.key !== 'repos'))
   if (!freeDays.length) return { days: [], list: [] }
   const work = week.days.filter(d => d.key !== 'repos' && d.date < today), done = work.filter(d => doneOn(d.date)).length
   const ratio = work.length ? done / work.length : 1
-  const runGap = (o.gaps || []).some(g => g.kind === 'run'), engine = (o.gaps || []).some(g => g.kind === 'engine')
-  const hasRun = week.days.filter(d => ['z2', 'seuil', 'allure'].includes(d.key)).length
+  const gaps = o.gaps || [], runGap = gaps.some(g => g.kind === 'run'), engine = gaps.some(g => g.kind === 'engine'), forceGap = gaps.some(g => g.kind === 'force')
+  const st = gaps.filter(g => g.kind === 'station').map(g => g.st).slice(0, 3)
+  const has = k => week.days.filter(d => k.includes(d.key) || (d.coach && k.includes((COACH_INFO[d.coach.act] || {}).ex === 'run' ? 'z2' : (COACH_INFO[d.coach.act] || {}).ex === 'strength' ? 'force' : (COACH_INFO[d.coach.act] || {}).ex === 'bike' ? 'z2' : ''))).length
   const pace = o.pace || 330, L = []
-  if (ratio < 0.6) L.push({ key: 'z2', title: 'Footing de reprise', min: 30, zone: 'Z2', detail: 'Séances manquées cette semaine : 30 min faciles plutôt que de tout rattraper.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }] })
+  const f = week.factor || 1, ctx = { focus: st.length ? st : week.focus, e1rm: o.e1rm, phase: week.phase && week.phase.id, factor: f, pace, self: o.self, prog: 0.5 }
+  const run = (key, title, min, zone, detail, blocks, why) => ({ key, kind: 'course', title, min, zone, detail, blocks, why })
+  if (ratio < 0.6) L.push(run('z2', 'Footing de reprise', 30, 'Z2', 'Séances manquées cette semaine : 30 min faciles plutôt que de tout rattraper.', [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }], 'reprise'))
   else {
-    if (runGap) L.push({ key: 'seuil', title: 'Fractionné court', min: 40, zone: 'Z4', detail: `8 × 400 m à ${Math.floor(pace * 0.92 / 60)}:${String(Math.round(pace * 0.92 % 60)).padStart(2, '0')}/km, récup 1 min : la course est votre point à travailler.`, blocks: [{ ex: 'run', name: '', sets: 1, rest: 60, w: 'A', target: { time: 600 }, note: 'échauffement' }, { ex: 'run', name: '', sets: 8, rest: 60, w: 'A', target: { meters: 400, time: Math.round(pace * 0.92 * 0.4) }, note: '' }] })
-    if (engine || hasRun < 2) L.push({ key: 'z2', title: 'Footing zone 2', min: 40, zone: 'Z2', detail: '40 min faciles : la base aérobie qui fait tenir les 8 km de course.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 2400 }, note: 'zone 2' }] })
-    if (ratio >= 0.9) L.push({ key: 'z2', title: 'Sortie longue facile', min: 60, zone: 'Z2', detail: 'Semaine bien suivie : 50 à 60 min faciles en bonus.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 3300 }, note: 'zone 2, terrain plat' }] })
-    if (!L.length) L.push({ key: 'z2', title: 'Footing récupération', min: 30, zone: 'Z1–Z2', detail: '30 min très faciles, utile le lendemain d’une séance dure.', blocks: [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }] })
+    if (runGap) L.push(run('seuil', 'Fractionné court', 40, 'Z4', `8 × 400 m à ${Math.floor(pace * 0.92 / 60)}:${String(Math.round(pace * 0.92 % 60)).padStart(2, '0')}/km, récup 1 min : la course est votre point à travailler.`, [{ ex: 'run', name: '', sets: 1, rest: 60, w: 'A', target: { time: 600 }, note: 'échauffement' }, { ex: 'run', name: '', sets: 8, rest: 60, w: 'A', target: { meters: 400, time: Math.round(pace * 0.92 * 0.4) }, note: '' }], 'course à travailler'))
+    if (st.length && has(['ateliers', 'compromis', 'simu']) < 2) { const [t, dd] = describe('ateliers', ctx); L.push({ key: 'ateliers', kind: 'hyrox', title: t, min: r5(55 * f), zone: 'Z3–Z4', detail: dd, blocks: blocksFor('ateliers', ctx), why: 'vos ateliers à travailler' }) }
+    if (forceGap || has(['force']) === 0) { const [t, dd] = describe('force', ctx); L.push({ key: 'force', kind: 'renfo', title: 'Renfo : ' + t.toLowerCase(), min: r5(55 * f), zone: 'Z3', detail: dd, blocks: blocksFor('force', ctx), why: forceGap ? 'force à développer' : 'pas de renfo cette semaine' }) }
+    if (engine || has(['z2', 'seuil', 'allure']) < 2) L.push(run('z2', 'Footing zone 2', 40, 'Z2', '40 min faciles : la base aérobie qui fait tenir les 8 km de course.', [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 2400 }, note: 'zone 2' }], 'endurance'))
+    if (ratio >= 0.9) L.push(run('z2', 'Sortie longue facile', 60, 'Z2', 'Semaine bien suivie : 50 à 60 min faciles en bonus.', [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 3300 }, note: 'zone 2, terrain plat' }], 'semaine bien suivie'))
+    if (!L.length) L.push(run('z2', 'Footing récupération', 30, 'Z1–Z2', '30 min très faciles, utile le lendemain d’une séance dure.', [{ ex: 'run', name: '', sets: 1, rest: 0, w: 'A', target: { time: 1800 }, note: 'très facile' }], 'récupération'))
   }
-  return { days: freeDays, list: L.slice(0, 2), ratio }
+  return { days: freeDays, list: L.slice(0, 3), ratio }
 }
 /** Ajoute une séance proposée à un jour libre de la semaine */
 export function addToWeek(plan, weekStart, date, s) {

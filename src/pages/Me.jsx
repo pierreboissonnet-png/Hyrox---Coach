@@ -9,8 +9,8 @@ import { buildProgram, DRILLS, wellNorm } from '../lib/program.js'
 import { customInsights, trainingLoad, sessionKcal, sessionMinutes, dayTypeFromKcal } from '../lib/load.js'
 import { isCustom, fmtTarget, newBlock } from '../lib/custom.js'
 import { targets, DAY_TYPES, MEALS, SUPPLEMENTS, ANTI_DOPING, raceDay } from '../lib/nutrition.js'
-import { DIETS, FOODS, SUPPS, gaps, recommend } from '../lib/diet.js'
-import { MARKERS, markersFor, refOf, flag, cycleInfo, PHASE_LABEL, PHASE_COLOR, phaseOn, cycles, cycleAverages } from '../lib/health.js'
+import { DIETS, FOODS, SUPPS, gaps, recommend, SOURCES } from '../lib/diet.js'
+import { MARKERS, MARKER_GROUPS, markersFor, refOf, flag, cycleInfo, PHASE_LABEL, PHASE_COLOR, phaseOn, cycles, cycleAverages } from '../lib/health.js'
 import { summary, hrBySegment, cyclePerformance } from '../lib/analyze.js'
 import { zonesOf } from '../lib/hr.js'
 import { detect, athletesIn, convert } from '../lib/importers.js'
@@ -36,7 +36,7 @@ export function Me() {
       <List>
         <Row icon="spark" color="#30d158" title="Forme du jour" sub="Fatigue, sommeil, courbatures : adapte le programme" href="#/moi/sante?t=forme" />
         <Row icon="heart" color="#ff9f0a" title="Douleurs" sub="Mouvements à éviter, programme adapté" href="#/moi/sante?t=douleurs" />
-        <Row icon="moon" color="#ff375f" title="Santé" sub={'Sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle' : '')} href="#/moi/sante" />
+        <Row icon="moon" color="#ff375f" title="Santé" sub={'Forme, sommeil, poids, prises de sang' + (profile.sex === 'F' ? ', cycle' : '')} href="#/moi/sante" />
       </List>
     </Sec>
     <Sec title="Nutrition">
@@ -75,7 +75,17 @@ function TodayCard({ T }) {
 export function Nutrition() {
   const { profile, races } = useApp()
   const T = useToday()
-  const [day, setDay] = useState(null), [start, setStart] = useState('10:00')
+  const toast = useToast()
+  const rd = useLoad(() => api.journal.list('raceday'), [])
+  const [day, setDay] = useState(null), [start0, setStart] = useState(null)
+  const savedRd = (rd.data || [])[0], start = start0 || (savedRd && savedRd.data.start) || '10:00'
+  async function saveRd() {
+    try {
+      const data = { start, race: next ? next.id : null, raceName: next ? next.name : '' }
+      if (savedRd) await api.journal.update(savedRd.id, { data, day: todayISO() }); else await api.journal.add({ kind: 'raceday', day: todayISO(), data })
+      setStart(null); rd.reload(); toast('Plan du jour J enregistré')
+    } catch (e) { toast('Enregistrement impossible : ' + e.message) }
+  }
   const dayId = day || T.type || 'entrainement'
   const t = targets(profile, dayId), next = upcoming(races)[0]
   // Avec une dépense mesurée : métabolisme de base × 1,35 (vie quotidienne) + séances du jour
@@ -98,6 +108,8 @@ export function Nutrition() {
       <List><Field label="Heure de départ"><input type="time" value={start} onChange={e => setStart(e.target.value)} /></Field>
         {raceDay(profile, start).map((r, i) => <Row key={i} title={r.what} value={r.time} />)}</List>
     </Sec>
+    <button className="btn block" style={{ marginTop: 10 }} onClick={saveRd} disabled={!!savedRd && !start0}>{savedRd && !start0 ? 'Heure de départ enregistrée ✓' : 'Enregistrer l’heure de départ'}</button>
+    <p className="foot">Les besoins se recalculent chaque jour selon vos séances et votre poids : rien d’autre à enregistrer ici. Votre alimentation se règle dans « Mon alimentation ».</p>
     <p className="foot">Estimations générales (formule de Mifflin-St Jeor). Pour un suivi personnalisé, consultez un(e) diététicien(ne) du sport.</p>
     </>}
   </Page>
@@ -114,13 +126,17 @@ const REC_STYLE = { remplacer: ['Remplacer', 'warn'], ajouter: ['Ajouter', 'acce
 
 /** Alimentation déclarée → apports → recommandations */
 /** Jauges des apports estimés (alimentation déclarée) face aux besoins du jour */
-export function NutriGauges({ G, day, limit }) {
+export function NutriGauges({ G, day, limit, info }) {
   const L = limit ? G.slice(0, limit) : G
-  return <div className="glass card">{L.map(g => { const pct = Math.min(1.5, g.ratio), col = g.k === 'kcal' ? (g.ratio < 0.85 || g.ratio > 1.15 ? 'var(--warn)' : 'var(--good)') : g.ratio < 0.7 ? 'var(--bad)' : g.ratio < 0.9 ? 'var(--warn)' : 'var(--good)'
-      return <div key={g.k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 104px', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 14 }}>
-        <span>{g.label}</span>
+  const [open, setOpen] = useState(null)
+  return <div className="glass card">{L.map(g => { const src = info && SOURCES[g.k], pct = Math.min(1.5, g.ratio), col = g.k === 'kcal' ? (g.ratio < 0.85 || g.ratio > 1.15 ? 'var(--warn)' : 'var(--good)') : g.ratio < 0.7 ? 'var(--bad)' : g.ratio < 0.9 ? 'var(--warn)' : 'var(--good)'
+      return <div key={g.k} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 104px', gap: 8, alignItems: 'center', padding: '5px 0', fontSize: 14, position: 'relative' }}
+        onMouseEnter={src ? () => setOpen(g.k) : undefined} onMouseLeave={src ? () => setOpen(o => o === g.k ? null : o) : undefined}>
+        {src ? <button className="link" style={{ textAlign: 'left', font: 'inherit', color: 'inherit', padding: 0, textDecoration: 'underline dotted', textUnderlineOffset: 3 }} onClick={() => setOpen(o => o === g.k ? null : g.k)} aria-expanded={open === g.k}>{g.label} <span className="faint">ⓘ</span></button> : <span>{g.label}</span>}
         <span style={{ position: 'relative', height: 10, background: 'var(--fill)', borderRadius: 99 }}><span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (pct / 1.5 * 100) + '%', background: col, borderRadius: 99 }} /><span style={{ position: 'absolute', left: (100 / 1.5) + '%', top: -3, bottom: -3, width: 1.5, background: 'var(--ink-3)' }} /></span>
-        <span className="num small" style={{ textAlign: 'right' }}>{Math.round(g.have)} / {Math.round(g.need)} {g.unit}</span></div> })}
+        <span className="num small" style={{ textAlign: 'right' }}>{Math.round(g.have)} / {Math.round(g.need)} {g.unit}</span>
+        {src && open === g.k && <div className="glass small" style={{ gridColumn: '1 / -1', borderRadius: 12, padding: '8px 12px', background: 'var(--card, var(--fill))' }}>
+          <b>Où en trouver</b><ul style={{ margin: '4px 0', paddingLeft: 18 }}>{src.L.map(x => <li key={x}>{x}</li>)}</ul><span className="muted">{src.tip}</span></div>}</div> })}
       <p className="small muted" style={{ marginBottom: 0 }}>Le trait vertical marque le besoin estimé ({DAY_TYPES.find(x => x.id === day).label.toLowerCase()}). Estimations à partir de portions moyennes : un ordre de grandeur, pas une pesée.</p></div>
 }
 function DietCoach({ T }) {
@@ -157,7 +173,8 @@ function DietCoach({ T }) {
     {T && T.list.length > 0 && <TodayCard T={T} />}
     <Seg value={day} onChange={setDay} options={DAY_TYPES.map(x => [x.id, x.label])} />
     <h2 className="sec">Apports estimés par jour</h2>
-    <NutriGauges G={G} day={day} />
+    <NutriGauges G={G} day={day} info />
+    <p className="foot" style={{ marginTop: -4 }}>Survolez ou touchez un apport pour voir les aliments courants qui en contiennent.</p>
     <h2 className="sec">Recommandations</h2>
     <List>{R.map((r, i) => <div className="row stack" key={i}><div className="row-gap"><span className={'badge ' + REC_STYLE[r.type][1]}>{REC_STYLE[r.type][0]}</span><b style={{ flex: 1, minWidth: 0 }}>{r.text}</b></div><span className="small muted">{r.why}</span></div>)}</List>
     <p className="foot">Repères ANSES et recommandations pour sportifs. Pour un suivi personnalisé (perte de poids, troubles digestifs, grossesse, pathologie), consultez un(e) diététicien(ne) du sport.</p>
@@ -180,9 +197,9 @@ export function Supplements() {
 export function Health() {
   const { profile } = useApp()
   const asked = new URLSearchParams(location.hash.split('?')[1] || '').get('t')
-  const [tab, setTab] = useState(asked && (asked !== 'cycle' || profile.sex === 'F') ? asked : 'sommeil')
+  const [tab, setTab] = useState(asked && (asked !== 'cycle' || profile.sex === 'F') ? asked : 'forme')
   if (!profile.consent_health) return <Page back="#/moi" title="Santé"><div className="glass card"><h3>Accord nécessaire</h3><p className="muted small">Pour enregistrer poids, prises de sang{profile.sex === 'F' ? ', cycle' : ''} et forme, activez « Données de santé » dans les réglages. Ces données restent strictement privées.</p><a className="btn small" href="#/moi/reglages">Réglages</a></div></Page>
-  const tabs = [['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : []), ['forme', 'Forme'], ['douleurs', 'Douleurs']]
+  const tabs = [['forme', 'Forme'], ['douleurs', 'Douleurs'], ['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : [])]
   return <Page back="#/moi" title="Santé" subtitle="Privé : visible par vous seul(e).">
     <Chips value={tab} onChange={setTab} label="Rubriques" options={tabs} />
     {tab === 'douleurs' && <Pains />}
@@ -296,8 +313,8 @@ function Blood() {
   return <>
     <button className="btn block" onClick={() => setOpen(true)}><Icon name="plus" size={18} />Saisir une prise de sang</button>
     <h2 className="sec">Derniers résultats</h2>
-    <List>{ms.filter(m => latest[m.id]).map(m => { const f = flag(m, profile.sex, latest[m.id].v), r = refOf(m, profile.sex); return <Row key={m.id} title={m.label} sub={(r ? `repère ${r[0]}–${r[1]} ${m.unit}` : m.why) + ' · ' + frDate(latest[m.id].day)} value={<span className={f === 'ok' ? 'good' : f ? 'bad' : ''}>{latest[m.id].v} {m.unit}{f && f !== 'ok' ? ' · ' + f : ''}</span>} /> })}
-      {!Object.keys(latest).length && <div className="row"><span className="muted small">Aucun résultat saisi.</span></div>}</List>
+    {!Object.keys(latest).length ? <List><div className="row"><span className="muted small">Aucun résultat saisi.</span></div></List>
+      : MARKER_GROUPS.map(([g, gl]) => { const L = ms.filter(m => m.g === g && latest[m.id]); return L.length ? <React.Fragment key={g}><div className="tiny muted" style={{ margin: '10px 16px 4px', fontWeight: 600 }}>{gl.toUpperCase()}</div><List>{L.map(m => { const f = flag(m, profile.sex, latest[m.id].v), r = refOf(m, profile.sex); return <Row key={m.id} title={m.label} sub={(r ? `repère ${r[0]}–${r[1]} ${m.unit}` : m.why) + ' · ' + frDate(latest[m.id].day)} value={<span className={f === 'ok' ? 'good' : f ? 'bad' : ''}>{String(latest[m.id].v).replace('.', ',')} {m.unit}{f && f !== 'ok' ? ' · ' + f : ''}</span>} /> })}</List></React.Fragment> : null })}
     <p className="foot">Repères indicatifs : les normes de votre laboratoire font foi. Une valeur hors repère se discute avec votre médecin.</p>
     <JournalList items={j.data} render={e => Object.entries(e.data).filter(([k, v]) => v != null && v !== '' && ms.some(m => m.id === k)).map(([k, v]) => ((MARKERS.find(m => m.id === k) || {}).label || k) + ' ' + v).join(' · ')} onDel={j.reload} />
     {open && <BloodSheet onClose={() => setOpen(false)} onSaved={() => { j.reload(); toast('Résultats enregistrés') }} />}
@@ -315,8 +332,11 @@ function BloodSheet({ onClose, onSaved }) {
     <List>
       <Field label="Date"><input type="date" value={day} onChange={e => setDay(e.target.value)} /></Field>
       {profile.sex === 'F' && <Field label="Jour du cycle" sub="Pour interpréter les hormones"><input inputMode="numeric" value={v.cycleDay || ''} onChange={e => setV({ ...v, cycleDay: e.target.value })} /></Field>}
-      {markersFor(profile.sex).map(m => <Field key={m.id} label={m.label} sub={m.unit}><input inputMode="decimal" value={v[m.id] || ''} onChange={e => setV({ ...v, [m.id]: e.target.value })} /></Field>)}
     </List>
+    <p className="foot" style={{ marginTop: 6 }}>Remplissez seulement les valeurs de votre compte rendu ; les autres restent vides.</p>
+    {MARKER_GROUPS.map(([g, gl]) => <React.Fragment key={g}><h2 className="sec">{gl}</h2><List>
+      {markersFor(profile.sex).filter(m => m.g === g).map(m => <Field key={m.id} label={m.label} sub={m.unit}><input inputMode="decimal" value={v[m.id] || ''} onChange={e => setV({ ...v, [m.id]: e.target.value })} /></Field>)}
+    </List></React.Fragment>)}
     <button className="btn block" style={{ marginTop: 12 }} onClick={save}>Enregistrer</button>
   </Sheet>
 }

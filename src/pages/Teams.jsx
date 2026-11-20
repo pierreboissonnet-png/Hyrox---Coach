@@ -7,7 +7,12 @@ import { STATIONS, SEGS, STATION, normPlan, planRelays, fmt, fd, parseT, frDate,
 import { summary, athleteStats, isComplete, cyclePerformance } from '../lib/analyze.js'
 import { normData } from '../lib/session.js'
 import { predictDuo, estimatePartner, planFromPrediction } from '../lib/predict.js'
-import { plansOf, partnerOf, RACE_TYPE } from './common.js'
+import { plansOf, partnerOf, RACE_TYPE, upcoming } from './common.js'
+import { gapsOf } from '../lib/gaps.js'
+import { datesOf, soloSeries, duoSeries, realResults, expectedCurve, firstOf, lastOf, valueAt, isoOfNum, dayNum, statsAt, fillStats } from '../lib/trend.js'
+import { addDays } from '../lib/plan.js'
+import { TrendCard } from './Trend.jsx'
+import { todayISO } from '../lib/hyrox.js'
 
 export const slotsOf = t => {
   const p = (t.plan && t.plan.slots) || {}
@@ -92,8 +97,7 @@ export function TeamDetail({ id }) {
       <Stat k="Meilleur temps" v={best ? fmt(best.sum.all.t) : '—'} d={best ? frDate(best.s.session_date) : ''} />
       <Stat k="Objectif du plan" v={fmt(objTotal)} d={best ? fd(best.sum.all.t - objTotal) : ''} tone={best ? tone(best.sum.all.t - objTotal) : ''} />
     </div>
-    {complete.length > 1 && <div className="glass card"><div className="small muted">Temps total des séances complètes</div>
-      <LineChart height={150} series={[{ color: COLORS.A, dots: true, pts: complete.map((x, i) => [i, x.sum.all.t]) }, { color: 'var(--ink-3)', width: 1, pts: [[0, objTotal], [complete.length - 1, objTotal]] }]} xFmt={v => { const x = complete[Math.round(v)]; return x ? frDate(x.s.session_date).slice(0, 5) : '' }} yFmt={v => fmt(v)} /></div>}
+    <TeamTrend t={t} objTotal={objTotal} />
     {lastSum && <div className="glass card"><div className="small muted" style={{ marginBottom: 6 }}>Ateliers vs objectif · {lastSum.s.name}</div><DeltaBars rows={lastSum.sum.stations.map(x => ({ label: x.label, d: x.d }))} /></div>}
 
     <Predictions team={t} />
@@ -158,6 +162,69 @@ function Predictions({ team }) {
       <p className="small muted">Chaque atelier est partagé pour que chacun travaille le même temps ; en course, le duo va à l’allure du plus lent.{pred.missing.length ? ' Sans données : ' + pred.missing.join(', ') + ' (objectif du plan).' : ''}</p>
       <button className="btn tinted small" onClick={apply}>Appliquer aux objectifs du plan</button>
     </div>
+  </>
+}
+
+/**
+ * Tendances du duo : trajectoire visée, temps du duo estimé, temps solo de chacun ;
+ * puis objectifs de chaque coéquipier et prochain palier à atteindre.
+ */
+function TeamTrend({ t, objTotal }) {
+  const { sessions, teams, races, profile } = useApp()
+  const lv = useLoad(() => api.journal.list('level'), [])
+  const T = useMemo(() => {
+    if (lv.loading) return null
+    const plans = plansOf(teams), today = todayISO(), sl = slotsOf(t), level = (lv.data || [])[0] || null
+    const lvOf = uid => uid === profile.id ? level : null   // le bilan du partenaire reste privé
+    const race = upcoming(races).filter(r => r.team_id === t.id).sort((a, b) => (a.priority === 'A' ? 0 : 1) - (b.priority === 'A' ? 0 : 1))[0] || null
+    const goal = (race && race.goal_seconds) || objTotal
+    const ts = sessions.filter(s => s.team_id === t.id).map(s => s.session_date).filter(d => d <= today).sort()
+    let from = ts[0] || addDays(today, -28)
+    if (from > addDays(today, -7)) from = addDays(today, -7)
+    if (from < addDays(today, -180)) from = addDays(today, -180)
+    const ids = [sl.A, sl.B].filter(Boolean), dates = datesOf(ids, sessions, from, today)
+    const duo = duoSeries(sl.A, sl.B, sessions, plans, lvOf(sl.A), t.plan, dates)
+    const solo = Object.fromEntries(ids.map(u => [u, soloSeries(u, sessions, plans, lvOf(u), dates)]))
+    const real = realResults(sessions, plans, s => s.team_id === t.id)
+    const E0 = firstOf(duo), raceIso = race ? race.race_date : null
+    const expected = E0 && raceIso ? expectedCurve(isoOfNum(E0[0]), E0[1], raceIso, goal) : []
+    // Objectifs individuels : même progression relative que le duo
+    const r = E0 ? goal / E0[1] : null
+    const who = ids.map(u => {
+      const m = t.members.find(x => x.user_id === u), pts = solo[u], s0 = firstOf(pts), now = lastOf(pts)
+      const G = gapsOf(statsAt(u, sessions, plans, lvOf(u), today), { profile: m ? m.profile : {} }).filter(g => g.kind !== 'test').slice(0, 2)
+      return { u, name: m ? m.profile.display_name : '?', color: u === sl.A ? COLORS.A : COLORS.B, now: now && now[1], target: s0 && r ? Math.round(s0[1] * r) : null, gaps: G }
+    })
+    // Prochain palier : là où la trajectoire attend le duo dans 4 semaines (ou à la prochaine course avant)
+    const nowD = lastOf(duo), next = upcoming(races).find(x => x.team_id === t.id && raceIso && x.race_date < raceIso)
+    const stepIso = next && next.race_date < addDays(today, 42) ? next.race_date : raceIso && addDays(today, 28) > raceIso ? raceIso : addDays(today, 28)
+    const stepV = expected.length ? Math.round(valueAt(expected, dayNum(stepIso))) : null
+    const a = fillStats(statsAt(sl.A, sessions, plans, lvOf(sl.A), today)), b = sl.B ? fillStats(statsAt(sl.B, sessions, plans, lvOf(sl.B), today)) : null
+    const pred = a || b ? predictDuo(a || b, b || a, t.plan) : null, plan = normPlan(t.plan)
+    const prio = pred ? STATIONS.map(x => ({ x, d: pred.seg[x.id] - (plan.obj[x.id] || 0) })).sort((p, q) => q.d - p.d)[0] : null
+    return { duo, solo, real, expected, goal, race, raceIso, who, nowD, stepIso, stepV, next, prio, sl }
+  }, [lv.loading, sessions, teams, races, t])
+  if (!T || !firstOf(T.duo)) return <div className="glass card small"><b>Tendances du duo</b><div className="muted">Les courbes apparaissent dès que l’app connaît l’allure de course et au moins 3 ateliers (séances du duo ou bilan « Mon niveau »).</div></div>
+  return <>
+    <TrendCard title="Tendances du duo" raceIso={T.raceIso} goal={T.goal} expected={T.expected}
+      lines={[{ label: 'Duo (estimé)', color: COLORS.C, pts: T.duo, dots: true, width: 3 },
+        ...T.who.map(w => ({ label: w.name + ' (solo)', color: w.color, pts: T.solo[w.u], width: 1.5, opacity: 0.8 })),
+        ...(T.real.length ? [{ label: 'Séances complètes', color: '#ff375f', pts: T.real, dots: true, width: 0.01 }] : [])]}
+      foot={T.race ? (T.race.goal_seconds ? '' : 'Pas d’objectif de temps sur « ' + T.race.name + ' » : la trajectoire vise le total du plan.') : 'Programmez un Hyrox avec ce duo pour voir la trajectoire jusqu’au jour J.'} />
+    <h2 className="sec">Objectifs de chacun</h2>
+    <List>{T.who.map(w => <div className="row stack" key={w.u}>
+      <div className="row-gap"><span style={{ width: 10, height: 10, borderRadius: 5, background: w.color, display: 'inline-block' }} /><b>{w.name}</b><span className="spacer" />
+        <span className="small">solo estimé <b className="num">{w.now ? fmt(w.now) : '—'}</b>{w.target ? <> → visé <b className="num">{fmt(w.target)}</b></> : ''}</span></div>
+      <span className="small muted">{w.gaps.length ? 'Priorités : ' + w.gaps.map(g => g.label + ' (' + g.why + ')').join(' ; ') : 'Pas de lacune nette avec les données actuelles.'}</span>
+    </div>)}</List>
+    {T.stepV != null && T.nowD && <>
+      <h2 className="sec">Prochain objectif du duo</h2>
+      <div className="glass card">
+        <div className="row-gap" style={{ alignItems: 'baseline' }}><span style={{ fontSize: 28, fontWeight: 800 }} className="num">{fmt(T.stepV)}</span>
+          <span className="muted small">d’ici le {frDate(T.stepIso)}{T.next && T.stepIso === T.next.race_date ? ' (' + T.next.name + ')' : ''}</span></div>
+        <p className="small" style={{ margin: '6px 0 0' }}>{T.nowD[1] > T.stepV ? <>Soit <b>{fmt(T.nowD[1] - T.stepV)}</b> à gagner par rapport à l’estimation actuelle ({fmt(T.nowD[1])}).</> : <>Déjà atteint avec l’estimation actuelle ({fmt(T.nowD[1])}) : gardez le cap.</>}
+          {T.prio && T.prio.d > 5 ? <> Plus gros levier : <b>{T.prio.x.label}</b> ({fd(T.prio.d)} sur l’objectif du plan).</> : ''}</p>
+      </div></>}
   </>
 }
 

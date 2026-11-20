@@ -8,7 +8,8 @@ import { SEGS, N, STATION, STATIONS, normPlan, planRelays, fmt, fd, fp, tone, fr
 import { normData, nextIdx, segStart, split, objCum, actions, relDur, relObj, relAmt, stStats, runKm, athKm, unitOf } from '../lib/session.js'
 import { summary, insights, hrBySegment, slotOf, segmentDetail, cyclePerformance } from '../lib/analyze.js'
 import { phaseOn, adjustTime, PHASE_LABEL, PHASE_COLOR } from '../lib/health.js'
-import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression } from '../lib/custom.js'
+import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned } from '../lib/custom.js'
+import { QuickSheet } from './Activity.jsx'
 import { CustomChrono, CustomResults, CustomStats, hrBySteps } from './Custom.jsx'
 import { StretchSuggest } from './Body.jsx'
 import { localCoach } from '../lib/coachLocal.js'
@@ -30,6 +31,7 @@ export default function SessionPage({ id, tab: tab0 }) {
   useEffect(() => { if (!base) api.sessions.get(id).then(x => x && setS(x)) }, [id])
   // Suivi en direct : les autres membres voient les temps arriver
   useEffect(() => api.sessions.subscribe(id, row => setS(cur => (!cur || (row.updated_at || '') > (cur.updated_at || '')) ? { ...cur, ...row } : cur)), [id])
+  const [editing, setEditing] = useState(null)
   const team = s && teams.find(t => t.id === s.team_id)
   const plan = useMemo(() => normPlan((s && s.plan) || (team && team.plan)), [team, s && s.plan])
   if (!s) return <Page back="#/seances" title="Séance"><p className="muted">Chargement…</p></Page>
@@ -56,7 +58,11 @@ export default function SessionPage({ id, tab: tab0 }) {
   const tabs = keeperOnly ? T.filter(([k]) => k === 'chrono' || k === 'temps') : T
   const go = t => { window.__hxReplace = true; location.replace('#/seance/' + id + '/' + t) }
 
-  return <Page back="#/seances" title={tab === 'chrono' ? null : s.name} subtitle={tab === 'chrono' ? null : `${frDate(s.session_date)} · ${KIND[s.kind]}${team ? ' · ' + team.name : duo ? ' · duo' : ' · solo'}`}>
+  const canEdit = !keeperOnly && (s.owner === profile.id || isAthlete(s, profile.id))
+  const editBtn = canEdit && <button className="btn glass small" onClick={() => isQuick(s) ? setEditing('quick') : isPlanned(s) ? (location.hash = '#/seance/specifique?edit=' + s.id) : setEditing('info')}><Icon name="gear" size={14} />Modifier</button>
+  return <Page back="#/seances" title={tab === 'chrono' ? null : s.name} actions={editBtn} subtitle={tab === 'chrono' ? null : `${frDate(s.session_date)} · ${KIND[s.kind]}${team ? ' · ' + team.name : duo ? ' · duo' : ' · solo'}`}>
+    {editing === 'quick' && <QuickSheet session={s} onClose={ok => { setEditing(null); if (ok) api.sessions.get(s.id).then(x => x && setS(x)) }} />}
+    {editing === 'info' && <InfoSheet s={s} onClose={ok => { setEditing(null); if (ok) api.sessions.get(s.id).then(x => x && setS(x)) }} />}
     <Seg value={tab} onChange={go} options={tabs} />
     {tab === 'chrono' && <KeeperBar {...ctx} setS={setS} />}
     {tab === 'chrono' && (custom ? <CustomChrono {...ctx} /> : <Chrono {...ctx} />)}
@@ -222,10 +228,12 @@ function Times({ s, d, plan, duo, who, commit, patch, keeperOnly }) {
         <Field label="Nom"><input defaultValue={s.name} onBlur={e => patch({ name: e.target.value })} /></Field>
         <Field label="Date"><input type="date" defaultValue={s.session_date} onBlur={e => patch({ session_date: e.target.value })} /></Field>
         <Field label="Type"><select defaultValue={s.kind} onChange={e => patch({ kind: e.target.value })}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+        <Field label="Effort ressenti" sub="1 à 10"><select value={d.rpe || ''} onChange={e => commit({ ...d, rpe: e.target.value ? +e.target.value : null })}><option value="">—</option>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <option key={v} value={v}>{v}/10</option>)}</select></Field>
         <div className="row stack"><span className="small muted">Note</span><textarea defaultValue={d.note} onBlur={e => commit({ ...d, note: e.target.value })} /></div>
       </List>
       {!keeperOnly && <button className="btn plain block" style={{ color: 'var(--bad)', marginTop: 10 }} onClick={del}>Supprimer la séance</button>}
     </>}
+    {!edit && (d.rpe || d.avgHR) && <p className="note">{[d.rpe && 'Effort ressenti ' + d.rpe + '/10', d.avgHR && 'FC moyenne ' + d.avgHR + ' bpm', d.manual && 'temps saisis après coup'].filter(Boolean).join(' · ')}</p>}
     {!edit && d.note && <p className="note">{d.note}</p>}
   </>
 }
@@ -520,4 +528,22 @@ function Coach({ s, d, plan, who }) {
     </div>)}
     {list.data && !list.data.length && <div className="glass card" style={{ marginTop: 12 }}><Empty icon="spark">Pas encore de conseils pour cette séance.</Empty></div>}
   </>
+}
+
+/** Modifier le nom, la date et le type d'une séance déjà faite */
+function InfoSheet({ s, onClose }) {
+  const { reload } = useApp(), toast = useToast()
+  const [f, setF] = useState({ name: s.name, date: s.session_date, kind: s.kind })
+  async function save() {
+    if (!f.name.trim()) return toast('Donnez un nom à la séance')
+    try { await api.sessions.save({ id: s.id, name: f.name.trim(), session_date: f.date, kind: f.kind }); await reload(['sessions']); toast('Séance modifiée'); onClose(true) } catch (e) { toast(e.message) }
+  }
+  return <Sheet title="Modifier la séance" onClose={() => onClose(false)} footer={<button className="btn block" onClick={save}>Enregistrer</button>}>
+    <List>
+      <Field label="Nom"><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} /></Field>
+      <Field label="Date"><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+      {!isCustom(s) && <Field label="Type"><select value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
+    </List>
+    <p className="foot">Les temps, objectifs et valeurs réalisées se corrigent dans l’onglet « {isCustom(s) ? 'Réalisé' : 'Temps'} » de la séance.</p>
+  </Sheet>
 }

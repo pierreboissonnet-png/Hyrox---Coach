@@ -88,3 +88,22 @@ test('ressenti : lacunes et charges progressives', async () => {
   assert.ok(loads.length >= 2); assert.ok(loads[0] < loads[loads.length - 1]); assert.ok(Math.max(...loads) <= 152)
   assert.ok(p.weeks.flatMap(w => w.days).some(d => d.key === 'compromis'))
 })
+test('semaine type : deux séances le même jour', async () => {
+  const m = await import('../src/lib/plan.js')
+  const T = [{ type: 'coach', act: 'spinning', intensity: 'modere', min: 45, second: { type: 'renfo' } }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'rest' }]
+  const p = m.createPlan({ race: { id: 'r', name: 'X', race_date: '2027-03-14', format: 'solo' }, from: '2026-11-20', perWeek: 5, gaps: [], template: T })
+  const w = p.weeks[2], mon = w.days.filter(d => d.date === w.start)
+  assert.equal(mon.length, 2); assert.equal(mon[0].key, 'coach'); assert.ok(mon[1].title.includes('renfo sans coach')); assert.equal(mon[1].slot, 2)
+  assert.equal(w.days.filter(d => d.key !== 'repos').length, 5)
+  const q = m.addToWeek(p, w.start, w.start, { key: 'z2', title: 'X', detail: '', zone: 'Z2', min: 30, blocks: [] }); assert.equal(q.weeks[2].days.filter(d => d.title === 'X').length, 1)
+})
+test('cours avec coach : ne pas y aller puis le remettre', async () => {
+  const m = await import('../src/lib/plan.js')
+  const T = [{ type: 'coach', act: 'spinning', intensity: 'modere', min: 45 }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'rest' }]
+  const p = m.createPlan({ race: { id: 'r', name: 'X', race_date: '2027-03-14', format: 'solo' }, from: '2026-11-20', perWeek: 4, gaps: [], template: T })
+  const mon = p.weeks[2].start, d0 = p.weeks[2].days[0]
+  assert.equal(d0.key, 'coach'); assert.ok(d0.detail.includes('Rien d’autre'))
+  const q = m.skipCoach(p, mon, 1, { pace: 320 }), d1 = q.weeks[2].days[0]
+  assert.notEqual(d1.key, 'coach'); assert.equal(d1.key, d0.replaces || 'z2'); assert.ok(d1.blocks); assert.ok(d1.coachSkipped)
+  const r = m.restoreCoach(q, mon, 1); assert.equal(r.weeks[2].days[0].key, 'coach'); assert.ok(!r.weeks[2].days[0].coachSkipped)
+})

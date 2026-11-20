@@ -104,3 +104,21 @@ export function recommend(diet, p, dayId = 'entrainement') {
   if (!out.some(x => x.type !== 'complément')) add('ok', 'Votre alimentation déclarée couvre les principaux besoins', 'Gardez l’essentiel : féculents avant les séances, protéines réparties, légumes et fruits chaque jour.')
   return out
 }
+
+/**
+ * Où trouver chaque apport, du plus recommandé au plus anecdotique, avec des aliments courants :
+ * le but est d'ajuster ce qu'on mange déjà, pas de changer de régime.
+ */
+export const SOURCES = {
+  kcal: { tip: 'Ajoutez une collation plutôt que de grossir les repas.', L: ['Fruit + poignée d’amandes ≈ 250 kcal', 'Bol de flocons d’avoine au lait ≈ 350 kcal', 'Tartine de pain complet + beurre de cacahuète ≈ 250 kcal', 'Yaourt + granola ≈ 250 kcal'] },
+  p: { tip: 'Visez une source à chaque repas, et une après la séance.', L: ['Skyr, fromage blanc : 10 g / 100 g', 'Œufs : 13 g pour 2', 'Poulet, dinde : 25 g / 100 g', 'Thon, sardines en boîte : 25 g / 100 g', 'Lentilles, pois chiches : 9 g / 100 g cuits', 'Tofu : 12 g / 100 g', 'Emmental : 8 g / 30 g'] },
+  c: { tip: 'À augmenter surtout la veille et le jour des séances dures.', L: ['Pâtes, riz, semoule : 30 g / 100 g cuits', 'Pain : 50 g / 100 g', 'Flocons d’avoine : 60 g / 100 g', 'Pommes de terre : 17 g / 100 g', 'Banane : 23 g', 'Fruits secs (dattes, abricots) : 60 g / 100 g'] },
+  f: { tip: 'Privilégiez les bonnes graisses, sans les supprimer.', L: ['Huile de colza ou d’olive : 10 g par cuillère à soupe', 'Noix, amandes : 15 g par poignée (30 g)', 'Avocat : 15 g / 100 g', 'Poissons gras (saumon, maquereau)', 'Beurre de cacahuète : 8 g par cuillère'] },
+  fib: { tip: 'Un légume ou un fruit à chaque repas suffit souvent.', L: ['Légumes à chaque repas', 'Fruits avec la peau (pomme, poire)', 'Pain complet ou aux céréales', 'Flocons d’avoine', 'Lentilles, haricots : 8 g / 100 g cuits', 'Pruneaux, figues sèches'] },
+  fe: { tip: 'Associez une vitamine C (agrume, kiwi, poivron) au repas ; thé et café plutôt à distance.', L: ['Viande rouge : 2,5 mg / 100 g (le mieux absorbé)', 'Boudin noir, moules', 'Lentilles : 3 mg / 100 g cuites', 'Tofu, pois chiches', 'Chocolat noir 70 % : 3 mg / 30 g', 'Céréales du petit-déjeuner enrichies'] },
+  ca: { tip: 'Deux ou trois produits laitiers par jour, ou une eau riche en calcium.', L: ['Yaourt : 150 mg', 'Emmental, comté : 300 mg / 30 g', 'Eaux minérales calciques : ≈ 500 mg / L', 'Sardines avec arêtes', 'Amandes, tofu au calcium', 'Choux, brocolis'] },
+  mg: { tip: 'Utile pour les crampes et la récupération.', L: ['Chocolat noir 70 % : 60 mg / 30 g', 'Amandes, noix de cajou : 80 mg / poignée', 'Eaux riches en magnésium', 'Banane : 35 mg', 'Pain complet, flocons d’avoine', 'Légumineuses, épinards'] },
+  o3: { tip: 'Une à deux portions de poisson gras par semaine couvrent l’essentiel.', L: ['Sardines, maquereau, hareng', 'Saumon, truite', 'Huile de colza ou de noix (forme végétale, moins efficace)', 'Noix'] },
+  b12: { tip: 'Uniquement d’origine animale : complément indispensable si végétalien.', L: ['Viande, poisson, fruits de mer', 'Œufs', 'Laitages, fromage', 'Aliments enrichis (boissons végétales, levure maltée)'] },
+  vd: { tip: 'Peu d’aliments en contiennent : le soleil compte ; en hiver un complément est souvent conseillé.', L: ['Poissons gras (saumon, sardines, maquereau)', 'Jaune d’œuf', 'Champignons exposés aux UV', '15–20 min de soleil bras découverts (printemps-été)'] },
+}

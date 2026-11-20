@@ -134,8 +134,9 @@ export default function Home() {
     </Sec>}
 
     {lastCustom && <Sec title="Dernière séance personnalisée"><List>{(() => { const c = customSummary(lastCustom); return <Row icon="bolt" color="#bf5af2" title={lastCustom.name} sub={`${frDate(lastCustom.session_date)} · ${c.done}/${c.n} étapes · ${[...new Set(c.steps.map(exLabel))].slice(0, 3).join(', ')}`} value={c.achievement != null ? Math.round(c.achievement * 100) + ' %' : ''} href={'#/seance/' + lastCustom.id + '/stats'} /> })()}</List></Sec>}
-    <Sec title="Dernière séance">
-      {!loaded ? <p className="muted">Chargement…</p> : !last ? <div className="glass card"><Empty icon="timer">Aucune séance pour l’instant.</Empty></div> : <>
+    <Sec title="Dernier Hyrox ou simulation">
+      {!loaded ? <p className="muted">Chargement…</p> : !last ? <div className="glass card"><Empty icon="timer">Aucun Hyrox ni simulation enregistré pour l’instant.</Empty>
+        <div className="row-gap" style={{ justifyContent: 'center', flexWrap: 'wrap' }}><a className="btn glass small" href="#/seance/nouvelle?apres=1">Ajouter un Hyrox déjà fait</a><a className="btn glass small" href="#/seance/nouvelle">Lancer une simulation</a></div></div> : <>
         <a href={'#/seance/' + last.id + '/stats'} style={{ color: 'inherit' }}>
           <div className="stats">
             <Stat k={last.name} v={fmt(sum.all.t)} d={sum.all.n ? fd(sum.all.d) + ' vs objectif' : KIND[last.kind]} tone={tone(sum.all.d)} />

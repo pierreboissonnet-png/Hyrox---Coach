@@ -6,7 +6,7 @@
 // envoyé dans l'en-tête « x-sync-token » (ou « Authorization: Bearer … » pour Health Auto Export).
 // À déployer SANS vérification JWT (le jeton personnel remplace la session).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { setLocalTz, extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries, extractMetrics, vitalsByDay, periods, extractWorkouts, activityOf } from './logic.ts'
+import { setLocalTz, dropDuplicates, normBody, received, extract, nights, nightsFromAggregates, byDay, mergeDay, sessionSeries, extractMetrics, vitalsByDay, periods, extractWorkouts, activityOf } from './logic.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sync-token', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -35,13 +35,16 @@ Deno.serve(async req => {
   const tzName = (body && body.timezone) || Deno.env.get('DEFAULT_TZ') || 'Europe/Paris'
   const tz = tzOffset(tzName)
   setLocalTz(tz)
+  const rec = received(body)
+  body = normBody(body)
   const { hr, sleep, sleepNights, source } = extract(body)
-  const out = { source, hr_points: hr.length, nights: 0, sessions: [] as string[], days: 0, weights: 0, periods: 0, workouts: 0 }
+  const out = { source, hr_points: hr.length, sleep_samples: sleep.length, sleep_types: [...new Set(sleep.map(x => x.v))].slice(0, 8), received: rec, nights: 0, sessions: [] as string[], days: 0, weights: 0, periods: 0, workouts: 0 }
   const AUTO = 'Santé (auto)', isAuto = (d: any) => !!(d && String(d.source || '').startsWith('Santé'))
   const today = new Date(Date.now() + tz * 6e4).toISOString().slice(0, 10)
 
   // ---- Mesures du jour (FC repos, VFC, VO2max, pas, énergie, respiration) → journal « vitals » ; poids → journal « weight »
-  const M = extractMetrics(body), V = vitalsByDay(M, tz), vdays = Object.keys(V)
+  const M = extractMetrics(body), dup = dropDuplicates(M), V = vitalsByDay(M, tz), vdays = Object.keys(V)
+  if (dup.length) (out as any).warning = `Valeurs identiques pour ${dup.join(', ')} : dans le raccourci, chaque champ « …_values » doit lire SA propre recherche. Ces mesures n'ont pas été enregistrées.`
   if (vdays.length) {
     const { data: ex } = await db.from('journal').select('id,day,kind,data').eq('user_id', uid).in('kind', ['vitals', 'weight']).in('day', vdays)
     for (const d of vdays) {

@@ -7,7 +7,12 @@ import { STATIONS, fmt, parseT, todayISO, frDate } from '../lib/hyrox.js'
 import { athleteStats } from '../lib/analyze.js'
 import { customInsights } from '../lib/load.js'
 import { gapsOf, withLevel, withSelf, SELF_STATES, URGENCY, WEIGHTED, STD_LOADS } from '../lib/gaps.js'
-import { plansOf } from './common.js'
+import { plansOf, mainRace } from './common.js'
+import { addDays } from '../lib/plan.js'
+import { datesOf, soloSeries, duoSeries, realResults, expectedCurve, firstOf, isoOfNum } from '../lib/trend.js'
+import { slotsOf } from './Teams.jsx'
+import { TrendCard } from './Trend.jsx'
+import { COLORS } from '../charts.jsx'
 
 const EXP = [['debut', 'Débutant'], ['inter', 'Intermédiaire'], ['confirme', 'Confirmé']]
 const RM = [['squat', 'Squat'], ['deadlift', 'Soulevé de terre'], ['bench', 'Développé couché']]
@@ -41,6 +46,7 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
     } catch (e) { toast('Enregistrement impossible : ' + e.message) } finally { setBusy(false) }
   }
   return <Page back="#/moi" title="Mon niveau" subtitle={cur ? 'Bilan du ' + frDate(cur.day) + '. Mettez-le à jour quand vous progressez.' : 'Renseignez ce que vous savez déjà. Tout est facultatif : chaque temps connu affine le plan.'}>
+    <LevelTrend level={cur} />
     <div className="note small" style={{ marginTop: 0 }}>Le plan s’appuie d’abord sur vos séances enregistrées ; ce bilan comble ce qu’elles ne disent pas encore. Pas de temps connu ? Faites la séance <a className="link" href="#/seance/specifique?tpl=test-niveau">« Test de niveau »</a> : ses résultats sont pris en compte automatiquement.</div>
     <Sec title="Mon ressenti" foot="Le plus important : ce que vous ressentez sur chaque partie. Le plan et le coach s’en servent pour cibler le travail (technique, charge, vitesse), même sans aucun chiffre.">
       <List>
@@ -109,3 +115,36 @@ function SelfRow({ id, label, kind, v = {}, set, sex }) {
   </div>
 }
 const lk = { background: 'none', border: 0, padding: 0, color: 'var(--accent)', font: 'inherit', textDecoration: 'underline' }
+
+/** Courbe de progression individuelle : temps solo estimé vs trajectoire attendue jusqu'à l'objectif principal */
+function LevelTrend({ level }) {
+  const { profile, sessions, teams, races } = useApp()
+  const planJ = useLoad(() => api.journal.list('plan'), [])
+  const T = useMemo(() => {
+    if (planJ.loading) return null
+    const plans = plansOf(teams), today = todayISO(), main = mainRace(races), plan = (planJ.data || [])[0]
+    const mine = sessions.filter(s => s.athletes && Object.values(s.athletes).includes(profile.id)).map(s => s.session_date).filter(d => d <= today).sort()
+    let from = (plan && plan.data && plan.data.created) || mine[0] || addDays(today, -28)
+    if (from > addDays(today, -7)) from = addDays(today, -7)
+    if (from < addDays(today, -180)) from = addDays(today, -180)
+    const dates = datesOf([profile.id], sessions, from, today)
+    const pts = soloSeries(profile.id, sessions, plans, level, dates)
+    const real = realResults(sessions, plans, s => !s.team_id && s.athletes && s.athletes.A === profile.id)
+    const E0 = firstOf(pts)
+    let goal = null, why = ''
+    if (main && main.goal_seconds && E0) {
+      const team = main.format === 'duo' && main.team_id ? teams.find(t => t.id === main.team_id) : null
+      if (team) {   // en duo : même progression relative que celle demandée au duo
+        const sl = slotsOf(team), other = sl.A === profile.id ? sl.B : sl.A
+        const start = duoSeries(profile.id, other, sessions, plans, level, team.plan, [isoOfNum(E0[0])])[0][1]
+        if (start) { goal = Math.round(E0[1] * main.goal_seconds / start); why = `En duo, votre objectif individuel suit la progression demandée au duo (${fmt(start)} → ${fmt(main.goal_seconds)}).` }
+      } else goal = main.goal_seconds
+    }
+    return { pts, real, goal, raceIso: main ? main.race_date : null, expected: goal ? expectedCurve(isoOfNum(E0[0]), E0[1], main.race_date, goal) : [], why, main }
+  }, [planJ.loading, sessions, teams, races, level])
+  if (!T) return null
+  if (!firstOf(T.pts)) return <div className="glass card small"><b>Ma courbe de progression</b><div className="muted">Elle apparaît dès que l’app connaît votre allure de course et au moins 3 ateliers (séances enregistrées ou temps du bilan ci-dessous).</div></div>
+  return <TrendCard title="Ma courbe de progression" raceIso={T.raceIso} goal={T.goal} expected={T.expected}
+    lines={[{ label: 'Mon temps solo estimé', color: COLORS.A, pts: T.pts, dots: true }, ...(T.real.length ? [{ label: 'Hyrox réalisés', color: COLORS.C, pts: T.real, dots: true, width: 0.01 }] : [])]}
+    foot={(T.why ? T.why + ' ' : '') + (T.main ? (T.goal ? '' : 'Ajoutez un objectif de temps à « ' + T.main.name + ' » (onglet Courses) pour voir la trajectoire attendue.') : 'Programmez un Hyrox (onglet Courses) pour voir la trajectoire jusqu’au jour J.')} />
+}

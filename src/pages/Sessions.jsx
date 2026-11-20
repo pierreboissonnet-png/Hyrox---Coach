@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast, Chips } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast, Chips, TIME, parseNum } from '../ui.jsx'
 import { DeltaBars } from '../charts.jsx'
-import { SEGS, fmt, fd, frDate, todayISO, tone, normPlan } from '../lib/hyrox.js'
-import { emptyData, normData, split } from '../lib/session.js'
+import { SEGS, STATIONS, fmt, fd, frDate, todayISO, tone, normPlan, parseT } from '../lib/hyrox.js'
+import { emptyData, normData, split, pastData } from '../lib/session.js'
 import { summary } from '../lib/analyze.js'
 import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/custom.js'
 import { QuickSheet } from './Activity.jsx'
@@ -80,26 +80,41 @@ export function NewSession() {
   const mine = activeTeams(teams, profile.id).filter(t => t.members.filter(m => !m.left_at).length === 2)
   const [f, setF] = useState({ format: mine.length ? 'duo' : 'solo', team: mine[0] ? mine[0].id : '', kind: 'entrainement', name: '', date: todayISO(), runKm: '', keeper: null })
   const [err, setErr] = useState('')
+  const [mode, setMode] = useState(qs().get('apres') ? 'after' : 'live')   // chrono en direct ou saisie d'un Hyrox déjà fait
+  const [P, setP] = useState({ t: {}, rox: '', total: '', rpe: 8, hr: '', start: '10:00', note: '' })
+  const after = mode === 'after'
   const team = f.format === 'duo' ? mine.find(t => t.id === f.team) : null
   const plan = normPlan(team && team.plan)
   const athletes = team ? slotsOf(team) : { A: user.id, B: null }
   async function create() {
     setErr('')
     if (f.format === 'duo' && !team) return setErr('Choisissez votre duo (ou créez-en un dans Équipe).')
+    let past = null
+    if (after) {
+      if (f.date > todayISO()) return setErr('La date doit être passée (ou aujourd’hui).')
+      const T = {}; for (const g of SEGS.filter(g => g.type !== 'rox')) { const v = parseT(P.t[g.id]); if (v == null || Number.isNaN(v) || v <= 0) return setErr('Temps manquant ou invalide : ' + g.label + ' (format m:ss)'); T[g.id] = v }
+      const rox = parseT(P.rox), total = parseT(P.total)
+      if (Number.isNaN(rox) || Number.isNaN(total)) return setErr('Roxzone et temps total au format h:mm:ss ou m:ss')
+      const hr = parseNum(P.hr); if (String(P.hr).trim() && (hr == null || hr < 60 || hr > 220)) return setErr('FC moyenne entre 60 et 220')
+      past = pastData({ times: T, rox, total, runKm: +f.runKm || plan.runKm, date: f.date, start: P.start, rpe: P.rpe, avgHR: hr, note: P.note })
+      if (past.error) return setErr(past.error)
+    }
     try {
       const nm = w => w === 'A' && !team ? profile.display_name : team ? slotName(team, w) : null
       const keeperName = f.keeper ? (knownUsers(teams, profile.id).find(p => p.id === f.keeper) || {}).display_name : null
       const s = await api.sessions.save({
         owner: user.id, team_id: team ? team.id : null, kind: f.kind, session_date: f.date,
         name: f.name.trim() || (f.kind === 'course' ? 'Course' : f.kind === 'simulation' ? 'Simulation' : 'Entraînement') + (team ? ' duo' : ' solo') + ' du ' + frDate(f.date).slice(0, 5),
-        athletes, data: emptyData(+f.runKm || plan.runKm), plan: team ? plan : null,
+        athletes, data: past || emptyData(+f.runKm || plan.runKm), plan: team ? plan : null,
         names: { A: nm('A'), B: team ? nm('B') : null, ...(keeperName ? { keeper: keeperName } : {}) }, timekeeper: f.keeper,
       })
-      await reload(['sessions']); toast(f.keeper ? `${keeperName} peut enregistrer vos temps` : 'Séance créée'); window.__hxReplace = true; location.replace('#/seance/' + s.id + '/chrono')
+      await reload(['sessions']); toast(past ? 'Hyrox enregistré' : f.keeper ? `${keeperName} peut enregistrer vos temps` : 'Séance créée'); window.__hxReplace = true; location.replace('#/seance/' + s.id + (past ? '/stats' : '/chrono'))
     } catch (e) { setErr(e.message) }
   }
-  return <Page back="#/seances" title="Nouvelle séance">
+  return <Page back="#/seances" title={after ? 'Hyrox déjà fait' : 'Nouvelle séance'}>
     <List><Row icon="bolt" color="#bf5af2" title="Plutôt une séance personnalisée ?" sub="Renfo, circuits, EMOM, course, ateliers… avec vos objectifs" href="#/seance/specifique" /></List>
+    <h2 className="sec">Chrono</h2>
+    <Seg value={mode} onChange={v => { setMode(v); if (v === 'after' && f.kind === 'entrainement') setF({ ...f, kind: 'simulation' }) }} options={[['live', 'En direct'], ['after', 'Déjà fait : saisir les temps']]} />
     <h2 className="sec">Format</h2>
     <Seg value={f.format} onChange={v => setF({ ...f, format: v })} options={[['solo', 'Solo'], ['duo', 'Duo']]} />
     {f.format === 'duo' && (mine.length ? <List><Field label="Duo"><select value={f.team} onChange={e => setF({ ...f, team: e.target.value })}>{mine.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></Field></List>
@@ -108,15 +123,45 @@ export function NewSession() {
     <Seg value={f.kind} onChange={v => setF({ ...f, kind: v })} options={[['entrainement', 'Entraînement'], ['simulation', 'Simulation'], ['course', 'Course']]} />
     <List>
       <Field label="Nom" sub="Facultatif"><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Entraînement mardi" /></Field>
-      <Field label="Date"><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+      <Field label="Date"><input type="date" value={f.date} max={after ? todayISO() : undefined} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+      {after && <Field label="Heure de départ" sub="Pour retrouver le cardio de la montre"><input type="time" value={P.start} onChange={e => setP({ ...P, start: e.target.value })} /></Field>}
       <Field label="Distance des courses" sub="km"><input type="number" step="0.05" value={f.runKm} onChange={e => setF({ ...f, runKm: e.target.value })} placeholder={String(plan.runKm).replace('.', ',')} /></Field>
     </List>
+    {after ? <PastTimes P={P} setP={setP} /> : <>
     <h2 className="sec">Qui enregistre les temps ?</h2>
     <KeeperPicker value={f.keeper} onChange={k => setF({ ...f, keeper: k })} exclude={Object.values(athletes).filter(Boolean)} />
-    <p className="foot">{team ? 'Le pointage suit la stratégie de relais du plan du duo. ' : 'En solo, pas de relais : on pointe la fin de chaque segment. '}Les temps arrivent en direct sur tous les téléphones. La personne qui pointe ne voit ni le cardio ni les données de santé.</p>
+    <p className="foot">{team ? 'Le pointage suit la stratégie de relais du plan du duo. ' : 'En solo, pas de relais : on pointe la fin de chaque segment. '}Les temps arrivent en direct sur tous les téléphones. La personne qui pointe ne voit ni le cardio ni les données de santé.</p></>}
     {err && <p className="err">{err}</p>}
-    <button className="btn block" style={{ marginTop: 16 }} onClick={create}><Icon name="play" size={18} />Ouvrir le chrono</button>
+    <button className="btn block" style={{ marginTop: 16 }} onClick={create}>{after ? <><Icon name="check" size={18} />Enregistrer ce Hyrox</> : <><Icon name="play" size={18} />Ouvrir le chrono</>}</button>
   </Page>
+}
+
+/** Saisie après coup : 8 courses, 8 ateliers, Roxzone (ou temps total), ressenti */
+function PastTimes({ P, setP }) {
+  const set = (id, v) => setP(p => ({ ...p, t: { ...p.t, [id]: v } }))
+  const sum = SEGS.filter(g => g.type !== 'rox').reduce((a, g) => { const v = parseT(P.t[g.id]); return v > 0 ? a + v : a }, 0)
+  const rox = parseT(P.rox), total = parseT(P.total)
+  const shown = total > 0 ? total : sum + (rox > 0 ? rox : 0)
+  const inp = { ...TIME, style: { width: 84, textAlign: 'right' } }
+  return <>
+    <h2 className="sec">Temps de chaque segment</h2>
+    <List>{STATIONS.map((st, k) => <React.Fragment key={st.id}>
+      <Field label={'Course ' + (k + 1)}><input {...inp} defaultValue={P.t['r' + (k + 1)] || ''} onChange={e => set('r' + (k + 1), e.target.value)} aria-label={'Course ' + (k + 1)} /></Field>
+      <Field label={st.label} sub={st.sub}><input {...inp} defaultValue={P.t[st.id] || ''} onChange={e => set(st.id, e.target.value)} aria-label={st.label} /></Field>
+    </React.Fragment>)}</List>
+    <List>
+      <Field label="Roxzone (total)" sub="Facultatif si temps total"><input {...inp} placeholder="h:mm:ss" defaultValue={P.rox} onChange={e => setP({ ...P, rox: e.target.value })} /></Field>
+      <Field label="Temps total" sub="Facultatif"><input {...inp} placeholder="h:mm:ss" defaultValue={P.total} onChange={e => setP({ ...P, total: e.target.value })} /></Field>
+    </List>
+    <p className="foot">Total : <b>{shown ? fmt(shown) : '—'}</b>. Sans Roxzone, elle est déduite du temps total (temps total − courses − ateliers) puis répartie sur les 15 transitions. Les résultats officiels Hyrox donnent tous ces temps.</p>
+    <h2 className="sec">Ressenti</h2>
+    <List>
+      <div className="row stack"><div className="row-gap"><span>Effort ressenti</span><span className="spacer" /><b>{P.rpe}/10</b></div>
+        <input type="range" min="1" max="10" value={P.rpe} onChange={e => setP({ ...P, rpe: +e.target.value })} aria-label="Effort ressenti" /></div>
+      <Field label="FC moyenne" sub="Facultatif"><input inputMode="numeric" value={P.hr} onChange={e => setP({ ...P, hr: e.target.value })} placeholder="bpm" style={{ width: 84, textAlign: 'right' }} /></Field>
+      <div className="row stack"><span className="small muted">Sensations</span><textarea value={P.note} onChange={e => setP({ ...P, note: e.target.value })} placeholder="Points forts, ateliers difficiles, gestion de l’effort…" /></div>
+    </List>
+  </>
 }
 
 export function Compare() {

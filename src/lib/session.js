@@ -103,3 +103,22 @@ export const actions = {
 
 /** Séance à deux athlètes (le second peut ne pas avoir encore rejoint le duo : son prénom suffit) */
 export const hasB = s => !!(s && s.athletes && (s.athletes.B || (s.names && s.names.B)))
+
+/**
+ * Hyrox saisi après coup : temps (s) des 8 courses et 8 ateliers, Roxzone totale (ou déduite du temps total),
+ * répartie sur les 15 transitions. Renvoie les données de séance (points de passage cumulés en ms) ou {error}.
+ */
+export function pastData({ times, rox, total, runKm = 1, date, start = '10:00', rpe = null, avgHR = null, note = '' }) {
+  const main = SEGS.filter(g => g.type !== 'rox').reduce((a, g) => a + (times[g.id] || 0), 0)
+  let R = rox > 0 ? rox : total > 0 ? total - main : 0
+  if (R < 0) return { error: 'Le temps total est plus court que la somme des courses et des ateliers.' }
+  const nR = SEGS.filter(g => g.type === 'rox').length, d = emptyData(runKm)
+  let c = 0
+  d.cp = SEGS.map(g => { c += g.type === 'rox' ? R / nR : times[g.id]; return Math.round(c * 1000) })
+  const [h, m] = String(start || '10:00').split(':').map(Number)
+  d.startedAt = new Date(date + 'T' + String(h || 0).padStart(2, '0') + ':' + String(m || 0).padStart(2, '0') + ':00').getTime()
+  d.manual = true; d.note = note || ''
+  if (rpe) d.rpe = rpe
+  if (avgHR) d.avgHR = avgHR
+  return d
+}

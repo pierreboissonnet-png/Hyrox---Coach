@@ -2,22 +2,42 @@
 // Les valeurs de référence varient selon les laboratoires : celles du compte rendu font foi.
 
 export const MARKERS = [
-  { id: 'ferritine', label: 'Ferritine', unit: 'µg/L', ref: { F: [15, 150], M: [30, 400] }, why: 'Réserves de fer ; basse = fatigue, baisse d’endurance.' },
-  { id: 'hb', label: 'Hémoglobine', unit: 'g/dL', ref: { F: [12, 16], M: [13, 17] }, why: 'Transport de l’oxygène.' },
-  { id: 'vitd', label: 'Vitamine D (25-OH)', unit: 'ng/mL', ref: { all: [30, 60] }, why: 'Os, muscles, immunité.' },
-  { id: 'crp', label: 'CRP', unit: 'mg/L', ref: { all: [0, 5] }, why: 'Inflammation ou infection (peut monter juste après un effort intense).' },
-  { id: 'ck', label: 'CK (créatine kinase)', unit: 'U/L', ref: { F: [25, 170], M: [40, 200] }, why: 'Dommages musculaires ; très élevée 24–72 h après une séance dure.' },
-  { id: 'tsh', label: 'TSH', unit: 'mUI/L', ref: { all: [0.4, 4] }, why: 'Thyroïde : énergie, métabolisme.' },
-  { id: 'glycemie', label: 'Glycémie à jeun', unit: 'g/L', ref: { all: [0.7, 1.0] }, why: 'Sucre sanguin.' },
-  { id: 'magnesium', label: 'Magnésium', unit: 'mmol/L', ref: { all: [0.7, 1.0] }, why: 'Contraction musculaire.' },
-  { id: 'cortisol', label: 'Cortisol (matin)', unit: 'µg/dL', ref: { all: [6, 23] }, why: 'Stress, récupération (prélèvement à 8 h).' },
-  { id: 'testo', label: 'Testostérone totale', unit: 'ng/mL', ref: { F: [0.1, 0.6], M: [3, 10] }, why: 'Récupération, masse musculaire ; basse si surentraînement ou déficit énergétique.' },
+  // Hémogramme (numération formule sanguine)
+  { id: 'hematies', g: 'hemo', label: 'Hématies (globules rouges)', unit: 'T/L', ref: { F: [3.8, 5.2], M: [4.2, 5.7] }, why: 'Nombre de globules rouges : transport de l’oxygène.' },
+  { id: 'hb', g: 'hemo', label: 'Hémoglobine', unit: 'g/dL', ref: { F: [12, 16], M: [13, 17] }, why: 'Transport de l’oxygène ; basse = anémie, endurance en baisse.' },
+  { id: 'hematocrite', g: 'hemo', label: 'Hématocrite', unit: '%', ref: { F: [36, 46], M: [40, 52] }, why: 'Part des globules rouges dans le sang (varie avec l’hydratation).' },
+  { id: 'vgm', g: 'hemo', label: 'VGM', unit: 'fL', ref: { all: [80, 100] }, why: 'Taille des globules rouges : petite si manque de fer, grande si manque de B9/B12.' },
+  { id: 'tcmh', g: 'hemo', label: 'TCMH', unit: 'pg', ref: { all: [27, 32] }, why: 'Hémoglobine par globule rouge.' },
+  { id: 'ccmh', g: 'hemo', label: 'CCMH', unit: 'g/dL', ref: { all: [32, 36] }, why: 'Concentration en hémoglobine des globules rouges.' },
+  { id: 'idr', g: 'hemo', label: 'IDR (indice de distribution)', unit: '%', ref: { all: [11, 15] }, why: 'Écart de taille entre globules rouges ; élevé au début d’un manque de fer.' },
+  { id: 'leucocytes', g: 'hemo', label: 'Leucocytes (globules blancs)', unit: 'G/L', ref: { all: [4, 10] }, why: 'Défenses immunitaires ; peuvent baisser en cas de surentraînement.' },
+  { id: 'pnn', g: 'hemo', label: 'Polynucléaires neutrophiles', unit: 'G/L', ref: { all: [1.8, 7.5] }, why: 'Défense contre les bactéries ; montent après un effort intense.' },
+  { id: 'pne', g: 'hemo', label: 'Polynucléaires éosinophiles', unit: 'G/L', ref: { all: [0, 0.5] }, why: 'Allergies, parasites.' },
+  { id: 'pnb', g: 'hemo', label: 'Polynucléaires basophiles', unit: 'G/L', ref: { all: [0, 0.1] }, why: 'Réactions allergiques.' },
+  { id: 'lympho', g: 'hemo', label: 'Lymphocytes', unit: 'G/L', ref: { all: [1, 4] }, why: 'Défense contre les virus ; baissent après un effort très long.' },
+  { id: 'mono', g: 'hemo', label: 'Monocytes', unit: 'G/L', ref: { all: [0.2, 1] }, why: 'Nettoyage et réparation des tissus.' },
+  // Plaquettes
+  { id: 'plaquettes', g: 'plaq', label: 'Plaquettes', unit: 'G/L', ref: { all: [150, 400] }, why: 'Coagulation.' },
+  { id: 'vpm', g: 'plaq', label: 'Volume plaquettaire moyen (VPM)', unit: 'fL', ref: { all: [7, 11] }, why: 'Taille moyenne des plaquettes.' },
+  // Biochimie
+  { id: 'crp', g: 'bio', label: 'CRP (protéine C réactive)', unit: 'mg/L', ref: { all: [0, 5] }, why: 'Inflammation ou infection (peut monter juste après un effort intense).' },
+  { id: 'ck', g: 'bio', label: 'CK (créatine kinase)', unit: 'U/L', ref: { F: [25, 170], M: [40, 200] }, why: 'Dommages musculaires ; très élevée 24–72 h après une séance dure.' },
+  { id: 'glycemie', g: 'bio', label: 'Glycémie à jeun', unit: 'g/L', ref: { all: [0.7, 1.0] }, why: 'Sucre sanguin.' },
+  { id: 'magnesium', g: 'bio', label: 'Magnésium', unit: 'mmol/L', ref: { all: [0.7, 1.0] }, why: 'Contraction musculaire.' },
+  // Fer et vitamines
+  { id: 'ferritine', g: 'fer', label: 'Ferritine', unit: 'µg/L', ref: { F: [15, 150], M: [30, 400] }, why: 'Réserves de fer ; basse = fatigue, baisse d’endurance.' },
+  { id: 'vitd', g: 'fer', label: 'Vitamine D (25-OH)', unit: 'ng/mL', ref: { all: [30, 60] }, why: 'Os, muscles, immunité.' },
+  // Hormones
+  { id: 'tsh', g: 'horm', label: 'TSH', unit: 'mUI/L', ref: { all: [0.4, 4] }, why: 'Thyroïde : énergie, métabolisme.' },
+  { id: 'cortisol', g: 'horm', label: 'Cortisol (matin)', unit: 'µg/dL', ref: { all: [6, 23] }, why: 'Stress, récupération (prélèvement à 8 h).' },
+  { id: 'testo', g: 'horm', label: 'Testostérone totale', unit: 'ng/mL', ref: { F: [0.1, 0.6], M: [3, 10] }, why: 'Récupération, masse musculaire ; basse si surentraînement ou déficit énergétique.' },
   // Hormones féminines : pas de norme unique, elles varient selon la phase du cycle
-  { id: 'oestradiol', label: 'Œstradiol', unit: 'pg/mL', ref: null, sex: 'F', why: 'Varie selon la phase du cycle : notez le jour du cycle.' },
-  { id: 'progesterone', label: 'Progestérone', unit: 'ng/mL', ref: null, sex: 'F', why: 'Élevée en phase lutéale ; notez le jour du cycle.' },
-  { id: 'lh', label: 'LH', unit: 'UI/L', ref: null, sex: 'F', why: 'Pic à l’ovulation.' },
-  { id: 'fsh', label: 'FSH', unit: 'UI/L', ref: null, sex: 'F', why: 'Varie selon la phase du cycle.' },
+  { id: 'oestradiol', g: 'horm', label: 'Œstradiol', unit: 'pg/mL', ref: null, sex: 'F', why: 'Varie selon la phase du cycle : notez le jour du cycle.' },
+  { id: 'progesterone', g: 'horm', label: 'Progestérone', unit: 'ng/mL', ref: null, sex: 'F', why: 'Élevée en phase lutéale ; notez le jour du cycle.' },
+  { id: 'lh', g: 'horm', label: 'LH', unit: 'UI/L', ref: null, sex: 'F', why: 'Pic à l’ovulation.' },
+  { id: 'fsh', g: 'horm', label: 'FSH', unit: 'UI/L', ref: null, sex: 'F', why: 'Varie selon la phase du cycle.' },
 ]
+export const MARKER_GROUPS = [['hemo', 'Hémogramme'], ['plaq', 'Plaquettes'], ['bio', 'Biochimie'], ['fer', 'Fer et vitamines'], ['horm', 'Hormones']]
 export const markersFor = sex => MARKERS.filter(m => !m.sex || m.sex === sex)
 export function refOf(m, sex) { if (!m.ref) return null; return m.ref.all || m.ref[sex === 'F' ? 'F' : 'M'] }
 export function flag(m, sex, v) {

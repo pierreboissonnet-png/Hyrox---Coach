@@ -24,7 +24,7 @@ export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v)
     {yt.map((v, i) => <g key={i}><line className="grid" x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} /><text x={L - 7} y={Y(v) + 6} textAnchor="end">{yFmt(v)}</text></g>)}
     {xt.map((v, i) => <text key={i} x={X(v)} y={H - 6} textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}>{xFmt(v)}</text>)}
     {marks.map((m, i) => <line key={i} x1={X(m)} x2={X(m)} y1={T} y2={H - B} stroke="var(--ink-3)" strokeWidth=".6" strokeDasharray="2 3" />)}
-    {series.map((s, i) => <path key={i} d={path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeLinejoin="round" strokeLinecap="round" />)}
+    {series.map((s, i) => <path key={i} d={path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.dash || undefined} opacity={s.opacity || 1} />)}
     {series.filter(s => s.dots).map((s, i) => s.pts.map(([x, y], k) => y != null && <circle key={i + '-' + k} cx={X(x)} cy={Y(y)} r="3.2" fill={s.color} />))}
   </svg>
 }

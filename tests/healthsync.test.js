@@ -100,3 +100,26 @@ test('FC à la minute : mesures réparties sur la minute', () => {
   const iso = L.extract({ heart_rate: { dates: ['2026-11-19T18:01:05+01:00', '2026-11-19T18:01:10+01:00'], values: [120, 121] } })
   assert.equal(new Date(iso.hr[1][0]).getUTCSeconds(), 10)
 })
+
+test('sommeil : iPhone sans montre (seulement « Au lit ») et codes HealthKit', () => {
+  const a = Date.parse('2026-11-19T22:30:00Z'), b = Date.parse('2026-11-20T05:45:00Z')
+  const N = L.nights([{ a, b, v: 'Au lit' }], 60)
+  assert.equal(N.length, 1); assert.equal(N[0].day, '2026-11-20'); assert.equal(N[0].data.asleep, 435); assert.equal(N[0].data.inBedOnly, true)
+  const M = L.nights([{ a, b, v: '0' }, { a: a + 6e5, b: b - 6e5, v: '4' }], 60)
+  assert.equal(M[0].data.asleep, 415); assert.equal(M[0].data.deep, 415); assert.equal(M[0].data.inBedOnly, undefined)
+  assert.equal(L.sleepKind('Principal'), 'core')
+})
+
+test('champs du raccourci tolérants (Starts, Début, Valeur…)', () => {
+  const b = L.normBody({ token: 'x', ' Starts ': '2026-11-19 23:10:00 +0100\n2026-11-20 02:00:00 +0100', 'Date de fin': '2026-11-20 02:00:00 +0100\n2026-11-20 06:40:00 +0100', Valeur: 'Core\nCore', rhr_dates: 'a' })
+  assert.ok(b.starts && b.ends && b.values && b.rhr_dates)
+  const { sleep } = L.extract(b); assert.equal(sleep.length, 2)
+  assert.deepEqual(L.received({ token: 'x', starts: 'a\nb', ends: '' }), { starts: 2, ends: 0 })
+})
+
+test('mesures en double (variable mal reliée) écartées', () => {
+  const t = Date.parse('2026-11-20T07:00:00Z')
+  const m = { rhr: [[t, 52]], weight: [[t, 52]], steps: [[t, 52]], hrv: [[t, 61]] }
+  assert.deepEqual(L.dropDuplicates(m).sort(), ['rhr', 'steps', 'weight']); assert.deepEqual(Object.keys(m), ['hrv'])
+  const ok = { rhr: [[t, 52]], weight: [[t, 78.4]] }; assert.deepEqual(L.dropDuplicates(ok), []); assert.equal(Object.keys(ok).length, 2)
+})
