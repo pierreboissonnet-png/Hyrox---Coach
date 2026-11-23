@@ -2,10 +2,10 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Seg, Icon, Empty, Sheet, Field, useToast, useLoad } from '../ui.jsx'
+import { Page, Sec, List, Row, Seg, Icon, Empty, Sheet, Field, Chips, useToast, useLoad } from '../ui.jsx'
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
 import { buildProgram, wellNorm } from '../lib/program.js'
-import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, COACH_INFO, COACH_RPE, runSuggestions, addToWeek, DAYS, skipCoach, restoreCoach } from '../lib/plan.js'
+import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, COACH_INFO, COACH_RPE, COACH_KINDS, runSuggestions, addToWeek, DAYS, skipCoach, restoreCoach } from '../lib/plan.js'
 import { quickSession } from '../lib/activity.js'
 import { gapsOf, duoAdjust, withLevel, withSelf } from '../lib/gaps.js'
 import { athleteStats, summary, hrBySegment } from '../lib/analyze.js'
@@ -20,7 +20,7 @@ import { QuickSheet } from './Activity.jsx'
 
 const PH_COLOR = { fondation: '#64d2ff', developpement: '#0a84ff', specifique: '#bf5af2', affutage: '#ff9f0a', course: '#ff375f', entretien: '#8e8e93' }
 // Une séance « compte » si quelque chose a été réalisé (pas une séance seulement planifiée)
-const realDone = s => !isPlanned(s)
+const realDone = s => !isPlanned(s) && !(s.data && s.data.stretch)   // les étirements ne remplacent pas une séance du plan
 
 /** Analyse partagée : lacunes, duo, allure, plan enregistré, suivi */
 export function usePlanData() {
@@ -66,7 +66,8 @@ export function usePlanData() {
   const prog = plan ? progress(plan, doneOn, today, { ach: ach14, extras, raceChanged }) : null
   const params = (o = {}) => ({ race, from: today, perWeek: o.perWeek || (plan && plan.perWeek) || 4, gaps: an.gaps, duo: an.duo, e1rm: ins.e1rm, pace: an.pace, level: o.level, template: o.template !== undefined ? o.template : template })
   const ready = !planJ.loading && !doneJ.loading && !lvl.loading && !tplJ.loading
-  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, prog, extras, params, today }
+  const mySessions = sessions.filter(s => isAthlete(s, profile.id))
+  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, prog, extras, params, today, sessions: mySessions }
 }
 
 function GapList({ gaps, empty }) {
@@ -81,7 +82,7 @@ export function Program() {
   const { profile, sessions, teams, reload } = useApp(), toast = useToast()
   const P = usePlanData(), { race, plan, entry, an, ins, doneOn, byDate, prog, today } = P
   const [perWeek, setPerWeek] = useState((plan && plan.perWeek) || 4)
-  const [notesOpen, setNotesOpen] = useState(false), [sel, setSel] = useState(null), [busy, setBusy] = useState(false), [quick, setQuick] = useState(false), [showDuo, setShowDuo] = useState(false)
+  const [coachOpen, setCoachOpen] = useState(null), [notesOpen, setNotesOpen] = useState(false), [sel, setSel] = useState(null), [busy, setBusy] = useState(false), [quick, setQuick] = useState(false), [showDuo, setShowDuo] = useState(false)
   // contexte « du moment » pour la semaine affichée
   const well = useLoad(() => profile.consent_health ? api.journal.list('wellbeing') : [], [])
   const sleep = useLoad(() => profile.consent_health ? api.journal.list('sleep') : [], [])
@@ -173,13 +174,18 @@ export function Program() {
     const next = manualIdx.includes(i) ? manualIdx.filter(x => x !== i) : [...manualIdx, i].sort()
     try { if (row) await api.journal.update(row.id, { data: { done: next } }); else await api.journal.add({ kind: 'program_done', day: week.start, data: { done: next } }); P.doneJ.reload() } catch (e) { toast(e.message) }
   }
-  const coachDone = d => (byDate[d.date] || []).some(x => x.data && x.data.planCoach === d.date + ':' + (d.slot || 1))
-  async function markCoach(d) {
-    if (coachDone(d)) return
+  const coachSession = d => (byDate[d.date] || []).find(x => x.data && x.data.planCoach === d.date + ':' + (d.slot || 1))
+  const coachDone = d => !!coachSession(d)
+  const markCoach = d => setCoachOpen(d)
+  async function saveCoach(d, o) {
     try {
-      const c = d.coach || {}, q = quickSession({ uid: profile.id, name: d.title.replace(' (avec coach)', ''), ex: (COACH_INFO[c.act] || COACH_INFO.autre).ex, date: d.date, minutes: d.min || 60, rpe: COACH_RPE[c.intensity] || 6, note: 'Cours avec coach' })
-      if (q.data.steps[0].ex === 'other' || q.data.steps[0].ex === 'strength' || q.data.steps[0].ex === 'yoga') q.data.steps[0].name = q.name
-      await api.sessions.save({ ...q, data: { ...q.data, planCoach: d.date + ':' + (d.slot || 1), coach: true } }); await reload(['sessions']); toast('Cours enregistré : il compte dans votre charge et votre dépense du jour')
+      const c = d.coach || {}, ex = (COACH_INFO[c.act] || COACH_INFO.autre).ex, cur = coachSession(d)
+      const label = d.title.replace(' (avec coach)', '') + (o.kindLabel ? ' · ' + o.kindLabel : '')
+      const q = quickSession({ uid: profile.id, name: label, ex, date: d.date, minutes: o.min || d.min || 60, rpe: o.rpe, note: o.note || 'Cours avec coach' })
+      if (['other', 'strength', 'yoga'].includes(ex)) q.data.steps[0].name = label
+      const data = { ...q.data, planCoach: d.date + ':' + (d.slot || 1), coach: true, coachDetail: { act: c.act, kind: o.kind || null } }
+      if (cur) await api.sessions.save({ id: cur.id, name: label, data: { ...cur.data, ...data } }); else await api.sessions.save({ ...q, data })
+      await reload(['sessions']); setCoachOpen(null); toast(cur ? 'Cours mis à jour' : 'Cours enregistré : il compte dans votre charge et votre dépense du jour')
     } catch (e) { toast(e.message) }
   }
   function launch(d) {
@@ -223,7 +229,7 @@ export function Program() {
     </div>
     <div className="row-gap" style={{ margin: '14px 4px 6px' }}>
       <button className="icon-btn glass" disabled={wi === 0} onClick={() => setSel(wi - 1)} aria-label="Semaine précédente"><Icon name="back" size={18} /></button>
-      <div style={{ flex: 1, textAlign: 'center' }}><b>Semaine {wi + 1}/{weeks.length}</b><div className="tiny muted">du {frDate(week.start).slice(0, 5)} au {frDate(addDays(week.start, 6)).slice(0, 5)} · {W.done}/{W.n} faites{week.deload ? ' · allégée' : ''}</div></div>
+      <div style={{ flex: 1, textAlign: 'center' }}><b>Semaine {wi + 1}/{weeks.length}</b><div className="tiny muted">du {frDate(week.start).slice(0, 5)} au {frDate(addDays(week.start, 6)).slice(0, 5)} · {W.done}/{W.n} faites{week.deload ? ' · allégée' : ''}{(() => { const L = P.sessions.filter(x => x.data && x.data.stretch && x.session_date >= week.start && x.session_date <= addDays(week.start, 6)); return L.length ? ' · étirements ' + L.length + '× (' + Math.round(L.reduce((a, x) => a + ((x.data.steps || [])[0]?.done?.time || 0), 0) / 60) + ' min)' : '' })()}</div></div>
       <button className="icon-btn glass" disabled={wi >= weeks.length - 1} onClick={() => setSel(wi + 1)} aria-label="Semaine suivante"><Icon name="chev" size={18} /></button>
     </div>
     {isCur && adapted.notes.length > 0 && <div className="glass card">
@@ -233,7 +239,7 @@ export function Program() {
     </div>}
     <List>{days.map((d, i) => { const done = d.key === 'coach' ? coachDone(d) : doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date + '-' + (d.slot || 1)} style={isToday ? { background: 'var(--accent-soft)' } : null}>
       <div className="row-gap"><b>{d.day}</b><span className="small muted">{frDate(d.date).slice(0, 5)}</span>{isToday && <span className="badge accent">Aujourd’hui</span>}{d.duo && <span className="badge">duo</span>}{d.key === 'coach' && <span className="badge" style={{ background: '#ff9f0a33' }}>coach</span>}{d.added && <span className="badge">ajoutée</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
-        {d.key === 'coach' ? (coachDone(d) ? <span className="badge good">Fait ✓</span> : d.date <= today && <button className="btn tinted small" onClick={() => markCoach(d)}>C’est fait</button>)
+        {d.key === 'coach' ? (coachDone(d) ? <button className="badge good" style={{ border: 0, cursor: 'pointer' }} onClick={() => setCoachOpen(d)} title="Voir ou préciser le cours">Fait ✓ ›</button> : d.date <= today && <button className="btn tinted small" onClick={() => markCoach(d)}>C’est fait</button>)
         : d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là' : 'Cocher quand la séance est faite'}>
           <input type="checkbox" checked={done} disabled={auto} onChange={() => toggle(i, d)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
       <div style={{ fontWeight: 600, textDecoration: done && d.key !== 'repos' ? 'line-through' : 'none', opacity: done && d.key !== 'repos' ? .65 : 1 }}>{d.title}</div>
@@ -293,7 +299,26 @@ export function Program() {
     {(plan.log || []).length > 0 && <><h2 className="sec">Historique du plan</h2><List>{[...plan.log].reverse().slice(0, 6).map((l, i) => <Row key={i} title={l.text} sub={frDate(l.date)} />)}</List></>}
     <p className="foot">Repères généraux de préparation. Adaptez à vos sensations ; en cas de douleur ou de problème de santé, demandez l’avis d’un professionnel.</p>
     {quick && <QuickSheet onClose={() => setQuick(false)} />}
+    {coachOpen && <CoachSheet d={coachOpen} cur={coachSession(coachOpen)} onClose={() => setCoachOpen(null)} onSave={o => saveCoach(coachOpen, o)} />}
   </Page>
+}
+
+/** Cours avec coach fait : contenu facultatif (type de séance, durée, effort, note) */
+function CoachSheet({ d, cur, onClose, onSave }) {
+  const c = d.coach || {}, kinds = COACH_KINDS[c.act] || COACH_KINDS.autre, st = cur && cur.data.steps && cur.data.steps[0], dn = (st && st.done) || {}
+  const [o, setO] = useState({ kind: (cur && cur.data.coachDetail && cur.data.coachDetail.kind) || null, min: dn.time ? Math.round(dn.time / 60) : d.min || 60, rpe: dn.rpe || COACH_RPE[c.intensity] || 6, note: cur && cur.data.note !== 'Cours avec coach' ? cur.data.note || '' : '' })
+  const kl = (kinds.find(k => k[0] === o.kind) || [])[1]
+  return <Sheet title={d.title.replace(' (avec coach)', '')} onClose={onClose} footer={<button className="btn block" onClick={() => onSave({ ...o, kindLabel: kl })}>{cur ? 'Enregistrer' : 'C’est fait'}</button>}>
+    <p className="small muted" style={{ marginTop: 0 }}>{d.day} {d.date.split('-').reverse().slice(0, 2).join('/')} · cours avec coach. Tout est <b>facultatif</b> : un simple « C’est fait » suffit.</p>
+    <div className="small" style={{ fontWeight: 600, margin: '6px 4px 2px' }}>Type de séance aujourd’hui</div>
+    <Chips value={o.kind} onChange={k => setO({ ...o, kind: o.kind === k ? null : k })} label="Type de séance" options={kinds} />
+    <List>
+      <Field label="Durée" sub="minutes"><input inputMode="numeric" value={o.min} onChange={e => setO({ ...o, min: +e.target.value.replace(/\D/g, '') || '' })} /></Field>
+      <div className="row stack"><div className="row-gap"><span>Effort ressenti</span><span className="spacer" /><b>{o.rpe}/10</b></div><input type="range" min="1" max="10" value={o.rpe} onChange={e => setO({ ...o, rpe: +e.target.value })} aria-label="Effort ressenti" /></div>
+      <div className="row stack"><span className="small muted">Note (exercices, charges, sensations…)</span><textarea value={o.note} onChange={e => setO({ ...o, note: e.target.value })} placeholder="Ex. squats 4 × 10 à 40 kg, burpees, gainage…" /></div>
+    </List>
+    {cur && <a className="btn glass block" style={{ marginTop: 10 }} href={'#/seance/' + cur.id}>Ouvrir la séance enregistrée</a>}
+  </Sheet>
 }
 
 /** Séance du jour pour l'accueil (plan si existant) */

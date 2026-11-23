@@ -149,17 +149,17 @@ export function AnalysesPage() {
     <Seg value={f} onChange={setF} options={[['open', `À traiter (${all.filter(r => ['new', 'doing'].includes(r.status)).length})`], ['done', 'Traitées'], ['all', 'Toutes']]} />
     {admin.data && L.length > 0 && <><button className="btn glass block" onClick={copy}><Icon name="copy" size={18} />Copier pour Claude ({L.length})</button>
       <p className="foot">Collez dans Claude (claude.ai ou Cowork), puis déposez chaque réponse ci-dessous. Avec la clé d’accès (fonction « coach-api »), Claude peut aussi lire les demandes et déposer ses réponses lui-même.</p></>}
-    {L.length ? <List>{L.map(r => <Row key={r.id} icon="spark" color="#5e5ce6" title={<><span className="num faint">#{r.no}</span> {r.pseudo}{r.question ? ' · ' + r.question.slice(0, 60) : ''}</>} sub={`${new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })} · ${(r.payload && r.payload.seance && r.payload.seance.nom) || 'séance'}`} value={<span className={'badge ' + RQ[r.status][1]}>{RQ[r.status][0]}</span>} onClick={() => { setOpen(r); setAns('') }} />)}</List>
+    {L.length ? <List>{L.map(r => <Row key={r.id} icon="spark" color="#5e5ce6" title={<><span className="num faint">#{r.no}</span> {r.pseudo}{r.question ? ' · ' + r.question.slice(0, 60) : ''}</>} sub={`${new Date(r.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })} · ${r.session_id ? ((r.payload && r.payload.seance && r.payload.seance.nom) || 'séance') : 'ANALYSE GLOBALE'}`} value={<span className={'badge ' + RQ[r.status][1]}>{RQ[r.status][0]}</span>} onClick={() => { setOpen(r); setAns('') }} />)}</List>
       : <div className="glass card"><Empty icon="spark">{list.loading ? 'Chargement…' : 'Aucune demande.'}</Empty></div>}
     {open && <Sheet title={'Demande n°' + open.no} onClose={() => setOpen(null)}>
-      <p className="small muted" style={{ marginTop: 0 }}>{open.pseudo} · <a href={'#/seance/' + open.session_id + '/coach'} onClick={() => setOpen(null)}>ouvrir la séance</a></p>
+      <p className="small muted" style={{ marginTop: 0 }}>{open.pseudo} · {open.session_id ? <a href={'#/seance/' + open.session_id + '/coach'} onClick={() => setOpen(null)}>ouvrir la séance</a> : 'analyse globale (toutes les données)'}</p>
       {open.question && <div className="glass card">{open.question}</div>}
       <details><summary className="small">Données transmises</summary><pre className="tiny mono" style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(open.payload, null, 1)}</pre></details>
       {admin.data && open.status !== 'done' && <>
         <div className="row-gap" style={{ margin: '10px 0' }}><button className="btn glass small" onClick={async () => { await api.coach.setRequest(open.id, { status: 'doing' }); list.reload(); setOpen({ ...open, status: 'doing' }) }}>Marquer « en cours »</button>
           <button className="btn glass small" onClick={async () => { try { await navigator.clipboard.writeText(requestsToMarkdown([open])); toast('Demande copiée') } catch {} }}><Icon name="copy" size={16} />Copier</button></div>
         <List><div className="row stack"><span className="small muted">Réponse de Claude (à coller ici)</span><textarea rows={8} value={ans} onChange={e => setAns(e.target.value)} /></div></List>
-        <button className="btn block" style={{ marginTop: 10 }} disabled={ans.trim().length < 20} onClick={async () => { await api.coach.answer(open, ans.trim()); toast('Analyse déposée dans la séance'); list.reload(); setOpen(null) }}>Déposer l’analyse</button>
+        <button className="btn block" style={{ marginTop: 10 }} disabled={ans.trim().length < 20} onClick={async () => { await api.coach.answer(open, ans.trim()); toast(open.session_id ? 'Analyse déposée dans la séance' : 'Analyse globale déposée'); list.reload(); setOpen(null) }}>Déposer l’analyse</button>
       </>}
     </Sheet>}
   </Page>

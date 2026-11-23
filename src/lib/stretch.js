@@ -43,12 +43,18 @@ export const ROUTINES = [
   { id: 'reveil', name: 'Réveil mobilité', desc: 'Mouvements lents pour démarrer la journée.', items: ['chat-vache', 'fente-rotation', '90-90', 'cheville-genou-mur', 'quadrupedie-poignets'] },
   { id: 'chevilles-mollets', name: 'Mollets et chevilles', desc: 'Après sauts, corde, course en côte.', items: ['rouleau-mollets', 'mollet-mur', 'soleaire', 'cheville-genou-mur'] },
   { id: 'rouleau', name: 'Rouleau de massage', desc: 'Relâchement global.', items: ['rouleau-mollets', 'rouleau-quadri', 'rouleau-fessiers', 'rouleau-dos'] },
+  // Séances longues pour les jours sans renfo : tout le corps, de la mobilité douce aux maintiens longs
+  { id: 'long-10', long: true, name: 'Express tout le corps', desc: 'Les essentiels quand on a peu de temps.', items: ['chat-vache', 'mollet-mur', 'quadri-debout', 'psoas-fente', 'figure4', 'enfant', 'pectoraux-porte'] },
+  { id: 'long-20', long: true, name: 'Séance complète', desc: 'Mobilité puis étirements de la tête aux pieds.', items: ['chat-vache', '90-90', 'mollet-mur', 'soleaire', 'quadri-debout', 'psoas-fente', 'ischio-allonge', 'pigeon', 'adducteurs', 'enfant', 'rotation-thoracique', 'pectoraux-porte', 'grand-dorsal', 'nuque'] },
+  { id: 'long-30', long: true, mult: 1.3, name: 'Séance longue', desc: 'Maintiens plus longs, idéale un jour de repos.', items: ['chat-vache', 'fente-rotation', '90-90', 'rouleau-mollets', 'mollet-mur', 'soleaire', 'quadri-debout', 'psoas-fente', 'ischio-allonge', 'pigeon', 'adducteurs', 'squat-profond', 'enfant', 'rotation-thoracique', 'pectoraux-porte', 'grand-dorsal', 'triceps', 'avant-bras'] },
+  { id: 'long-45', long: true, mult: 1.2, name: 'Grande séance récupération', desc: 'Rouleau, mobilité et maintiens longs : la séance « spa » de la semaine.', items: ['rouleau-mollets', 'rouleau-quadri', 'rouleau-fessiers', 'rouleau-dos', 'chat-vache', 'fente-rotation', '90-90', 'cheville-genou-mur', 'mollet-mur', 'soleaire', 'quadri-debout', 'psoas-fente', 'ischio-allonge', 'ischio-debout', 'pigeon', 'figure4', 'adducteurs', 'squat-profond', 'enfant', 'genoux-poitrine', 'rotation-thoracique', 'pectoraux-porte', 'grand-dorsal', 'epaule-croise', 'triceps', 'avant-bras', 'nuque'] },
 ]
 export const ROUTINE = Object.fromEntries(ROUTINES.map(r => [r.id, r]))
-/** Durée totale d'une routine (s), côtés compris */
-export const routineSec = items => items.reduce((a, id) => a + (STRETCH[id] ? STRETCH[id].sec * (STRETCH[id].side ? 2 : 1) + 5 : 0), 0)
+const held = (s, mult = 1) => Math.round(s.sec * mult / 5) * 5   // maintien allongé dans les séances longues
+/** Durée totale d'une routine (s), côtés compris ; mult = maintiens allongés */
+export const routineSec = (items, mult = 1) => items.reduce((a, id) => a + (STRETCH[id] ? (held(STRETCH[id], mult) + 5) * (STRETCH[id].side ? 2 : 1) : 0), 0)
 /** Étapes jouées par le lecteur (une par côté) */
-export const playSteps = items => items.flatMap(id => { const s = STRETCH[id]; return !s ? [] : s.side ? [{ ...s, sideLabel: 'côté gauche' }, { ...s, sideLabel: 'côté droit' }] : [{ ...s }] })
+export const playSteps = (items, mult = 1) => items.flatMap(id => { const s0 = STRETCH[id]; if (!s0) return []; const s = { ...s0, sec: held(s0, mult) }; return s.side ? [{ ...s, sideLabel: 'côté gauche' }, { ...s, sideLabel: 'côté droit' }] : [{ ...s }] })
 
 /** Routine conseillée après une séance (d'après les exercices réalisés) */
 export function suggestRoutine(s) {

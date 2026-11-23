@@ -5,10 +5,11 @@ import { api, COACH_MODE } from '../lib/api.js'
 import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, Switch, useToast, useLoad } from '../ui.jsx'
 import { LineChart, DeltaBars, ZoneBar, COLORS } from '../charts.jsx'
 import { SEGS, N, STATION, STATIONS, normPlan, planRelays, fmt, fd, fp, tone, frDate, parseT, fmtU, kmStr } from '../lib/hyrox.js'
+import { todayISO } from '../lib/hyrox.js'
 import { normData, nextIdx, segStart, split, objCum, actions, relDur, relObj, relAmt, stStats, runKm, athKm, unitOf } from '../lib/session.js'
 import { summary, insights, hrBySegment, slotOf, segmentDetail, cyclePerformance } from '../lib/analyze.js'
 import { phaseOn, adjustTime, PHASE_LABEL, PHASE_COLOR } from '../lib/health.js'
-import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned } from '../lib/custom.js'
+import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned, stepLabel } from '../lib/custom.js'
 import { QuickSheet } from './Activity.jsx'
 import { CustomChrono, CustomResults, CustomStats, hrBySteps } from './Custom.jsx'
 import { StretchSuggest } from './Body.jsx'
@@ -28,13 +29,14 @@ export default function SessionPage({ id, tab: tab0 }) {
   const [s, setS] = useState(base || null)
   const hist = useRef([])
   useEffect(() => { if (!s && base) setS(base) }, [base])
-  useEffect(() => { if (!base) api.sessions.get(id).then(x => x && setS(x)) }, [id])
+  const [missing, setMissing] = useState(false)
+  useEffect(() => { if (!base) api.sessions.get(id).then(x => x ? setS(x) : setMissing(true)).catch(() => setMissing(true)) }, [id])
   // Suivi en direct : les autres membres voient les temps arriver
   useEffect(() => api.sessions.subscribe(id, row => setS(cur => (!cur || (row.updated_at || '') > (cur.updated_at || '')) ? { ...cur, ...row } : cur)), [id])
   const [editing, setEditing] = useState(null)
   const team = s && teams.find(t => t.id === s.team_id)
   const plan = useMemo(() => normPlan((s && s.plan) || (team && team.plan)), [team, s && s.plan])
-  if (!s) return <Page back="#/seances" title="Séance"><p className="muted">Chargement…</p></Page>
+  if (!s) return <Page back="#/seances" title="Séance">{missing ? <div className="glass card"><Empty icon="timer">Séance introuvable : elle a peut-être été supprimée.</Empty><a className="btn glass block" href="#/seances">Voir mes séances</a></div> : <p className="muted">Chargement…</p>}</Page>
   const d = normData(s.data)
   const duo = hasB(s)
   const who = w => { const uid = s.athletes[w]; if (uid === profile.id) return profile.display_name; const p = profileOf(uid, teams, profile); return (p && p.display_name) || (s.names && s.names[w]) || 'Athlète ' + w }
@@ -60,10 +62,12 @@ export default function SessionPage({ id, tab: tab0 }) {
 
   const canEdit = !keeperOnly && (s.owner === profile.id || isAthlete(s, profile.id))
   const editBtn = canEdit && <button className="btn glass small" onClick={() => isQuick(s) ? setEditing('quick') : isPlanned(s) ? (location.hash = '#/seance/specifique?edit=' + s.id) : setEditing('info')}><Icon name="gear" size={14} />Modifier</button>
-  return <Page back="#/seances" title={tab === 'chrono' ? null : s.name} actions={editBtn} subtitle={tab === 'chrono' ? null : `${frDate(s.session_date)} · ${KIND[s.kind]}${team ? ' · ' + team.name : duo ? ' · duo' : ' · solo'}`}>
+  const plannedS = custom && isPlanned(s)
+  return <Page back="#/seances" title={tab === 'chrono' && !plannedS ? null : s.name} actions={editBtn} subtitle={tab === 'chrono' && !plannedS ? null : `${frDate(s.session_date)} · ${KIND[s.kind]}${team ? ' · ' + team.name : duo ? ' · duo' : ' · solo'}`}>
     {editing === 'quick' && <QuickSheet session={s} onClose={ok => { setEditing(null); if (ok) api.sessions.get(s.id).then(x => x && setS(x)) }} />}
     {editing === 'info' && <InfoSheet s={s} onClose={ok => { setEditing(null); if (ok) api.sessions.get(s.id).then(x => x && setS(x)) }} />}
     <Seg value={tab} onChange={go} options={tabs} />
+    {tab === 'chrono' && custom && isPlanned(s) && canEdit && <PlannedCard s={s} />}
     {tab === 'chrono' && <KeeperBar {...ctx} setS={setS} />}
     {tab === 'chrono' && (custom ? <CustomChrono {...ctx} /> : <Chrono {...ctx} />)}
     {tab === 'chrono' && custom && <CustomCoachTrigger s={s} who={who} />}
@@ -492,7 +496,7 @@ export async function askCoach(s, d, plan, who, me, opt = {}) {
   const summaryJson = await coachPayload(s, d, plan, who, me)
   return api.coach.ask({ session_id: s.id, summary: summaryJson, ...opt })
 }
-function md(text) {
+export function md(text) {
   // Mise en forme minimale : **gras**, titres, puces
   return text.split('\n').map((l, i) => {
     const h = l.match(/^#+\s*(.*)/), b = l.match(/^\s*[-*•]\s+(.*)/)
@@ -528,6 +532,23 @@ function Coach({ s, d, plan, who }) {
     </div>)}
     {list.data && !list.data.length && <div className="glass card" style={{ marginTop: 12 }}><Empty icon="spark">Pas encore de conseils pour cette séance.</Empty></div>}
   </>
+}
+
+/** Résumé d'une séance prévue : contenu, modifier, supprimer */
+function PlannedCard({ s }) {
+  const { reload } = useApp(), toast = useToast()
+  const c = customSummary(s), future = s.session_date > todayISO()
+  async function del() {
+    if (!confirm('Supprimer la séance prévue « ' + s.name + ' » ?')) return
+    try { await api.sessions.remove(s.id); await reload(['sessions']); toast('Séance prévue supprimée'); location.hash = '#/seances' } catch (e) { toast('Suppression impossible : ' + e.message) }
+  }
+  return <div className="glass card">
+    <div className="row-gap"><span className="badge accent">{future ? 'Prévue le ' + frDate(s.session_date) : 'Prévue aujourd’hui'}</span><span className="spacer" /><span className="small muted">{c.n} étape(s)</span></div>
+    <ul className="small" style={{ margin: '8px 0', paddingLeft: 18 }}>{c.steps.slice(0, 14).map((x, i) => <li key={i}><b>{stepLabel(x)}</b> <span className="muted">{fmtTarget(x.target)}</span></li>)}{c.steps.length > 14 && <li className="muted">… et {c.steps.length - 14} de plus</li>}</ul>
+    <div className="row-gap"><a className="btn glass small" style={{ flex: 1 }} href={'#/seance/specifique?edit=' + s.id}><Icon name="gear" size={14} />Modifier</a>
+      <button className="btn plain small" style={{ flex: 1, color: 'var(--bad)' }} onClick={del}>Supprimer</button></div>
+    {future && <p className="small muted" style={{ marginBottom: 0 }}>Le chrono ci-dessous peut être lancé dès maintenant si vous avancez la séance.</p>}
+  </div>
 }
 
 /** Modifier le nom, la date et le type d'une séance déjà faite */

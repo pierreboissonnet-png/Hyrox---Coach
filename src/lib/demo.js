@@ -151,9 +151,11 @@ export const demoApi = {
     list: sid => wait(D().coach_feedback.filter(c => c.session_id === sid).reverse()),
     request(r) { const d = D(); d.coach_requests = d.coach_requests || []; const x = { id: uid(), no: d.coach_requests.length + 1, user_id: ME, status: 'new', created_at: new Date().toISOString(), ...r }; d.coach_requests.push(x); commit(); return wait({ id: x.id, no: x.no }) },
     requests: sid => wait((D().coach_requests || []).filter(r => r.session_id === sid)),
+    globalRequests: () => wait([...(D().coach_requests || [])].filter(r => !r.session_id).reverse()),
+    globalAnswers: () => wait([...D().coach_feedback].filter(c => c.scope === 'global').reverse()),
     allRequests: () => wait([...(D().coach_requests || [])].reverse()),
     setRequest(id, patch) { Object.assign((D().coach_requests || []).find(r => r.id === id), patch); commit(); return wait(null) },
-    answer(req, content) { D().coach_feedback.push({ id: uid(), session_id: req.session_id, user_id: req.user_id, scope: 'session', content, model: 'Claude (analyse approfondie)', request_id: req.id, created_at: new Date().toISOString() }); Object.assign(D().coach_requests.find(r => r.id === req.id), { status: 'done' }); commit(); return wait(null) },
+    answer(req, content) { D().coach_feedback.push({ id: uid(), session_id: req.session_id, user_id: req.user_id, scope: req.session_id ? 'session' : 'global', content, model: 'Claude (analyse approfondie)', request_id: req.id, created_at: new Date().toISOString() }); Object.assign(D().coach_requests.find(r => r.id === req.id), { status: 'done' }); commit(); return wait(null) },
     save(row) { const r = { id: uid(), user_id: ME, created_at: new Date().toISOString(), scope: 'session', ...row }; D().coach_feedback.push(r); commit(); return wait(r) },
     async ask({ session_id, summary }) {
       // En démo, pas d'appel à Claude : réponse construite à partir des conseils automatiques

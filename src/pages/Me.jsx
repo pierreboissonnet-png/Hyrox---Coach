@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api, setDemo, COACH_MODE } from '../lib/api.js'
 import { Page, Sec, List, Row, Field, Seg, Switch, Sheet, Empty, Icon, Stat, useToast, useLoad, parseNum, Chips } from '../ui.jsx'
@@ -27,6 +27,7 @@ export function Me() {
       <List>
         <Row icon="cal" color="#5e5ce6" title="Programme jusqu’à la course" sub={next ? next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
         <Row icon="chart" color="#ff375f" title="Mon niveau" sub="Bilan : temps de course, ateliers, force. Sert de base au plan" href="#/moi/niveau" />
+        <Row icon="spark" color="#5e5ce6" title="Analyse globale par Claude" sub="Toute votre préparation passée au crible, avec vos questions" href="#/moi/analyse" />
         <Row icon="bolt" color="#bf5af2" title="Bibliothèque de séances" sub="Séances types et mes modèles, à lancer ou planifier" href="#/seance/specifique?lib=1" />
         <Row icon="timer" color="#0a84ff" title="Mes séances" sub="Historique, séances prévues, activités" href="#/seances" />
         <Row icon="leaf" color="#64d2ff" title="Étirements et mobilité" sub="Routines minutées, banque par zone" href="#/moi/etirements" />
@@ -401,6 +402,13 @@ function WatchCard() {
 function Wellbeing() {
   const j = useLoad(() => api.journal.list('wellbeing'), []), toast = useToast()
   const [v, setV] = useState({ fatigue: 1, sleep: 3, soreness: 1, mood: 3 })
+  const [touched, setTouched] = useState(false)
+  // La forme déjà enregistrée aujourd'hui est rechargée (sinon les curseurs repartaient des valeurs par défaut)
+  useEffect(() => {
+    const e = (j.data || []).find(x => x.day === todayISO()); if (!e || touched) return
+    const w = wellNorm(e), r = x => x == null ? null : Math.max(0, Math.min(5, Math.round(x)))
+    setV(cur => ({ fatigue: r(w.fatigue) ?? cur.fatigue, sleep: r(w.sleep) ?? cur.sleep, soreness: r(w.soreness) ?? cur.soreness, mood: r(w.mood) ?? cur.mood }))
+  }, [j.data])
   const L = {
     fatigue: ['Fatigue', ['Aucune', 'Très légère', 'Légère', 'Modérée', 'Forte', 'Extrême']],
     sleep: ['Qualité du sommeil', ['Très mauvais', 'Mauvais', 'Moyen', 'Correct', 'Bon', 'Excellent']],
@@ -419,7 +427,7 @@ function Wellbeing() {
   return <>
     <WatchCard />
     <List>{Object.entries(L).map(([k, [l, names]]) => <div className="row stack" key={k}><div className="row-gap"><span>{l}</span><span className="spacer" /><b>{names[v[k]]}</b><span className="num small muted">{v[k]}/5</span></div>
-      <input type="range" min="0" max="5" step="1" value={v[k]} onChange={e => setV({ ...v, [k]: +e.target.value })} aria-label={l} aria-valuetext={names[v[k]]} /><div className="row-gap tiny faint"><span>0 · {names[0].toLowerCase()}</span><span className="spacer" /><span>5 · {names[5].toLowerCase()}</span></div></div>)}</List>
+      <input type="range" min="0" max="5" step="1" value={v[k]} onChange={e => { setTouched(true); setV({ ...v, [k]: +e.target.value }) }} aria-label={l} aria-valuetext={names[v[k]]} /><div className="row-gap tiny faint"><span>0 · {names[0].toLowerCase()}</span><span className="spacer" /><span>5 · {names[5].toLowerCase()}</span></div></div>)}</List>
     <button className="btn block" style={{ marginTop: 12 }} onClick={save}>{todayRow ? 'Mettre à jour la forme du jour' : 'Enregistrer la forme du jour'}</button>
     {todayRow && <a className="btn glass block" style={{ marginTop: 8 }} href="#/moi/programme"><Icon name="cal" size={16} />Voir le programme du jour</a>}
     <p className="foot">Effet sur le programme : une fatigue ou des courbatures à 4–5 (ou un sommeil à 0–1) transforment seulement la séance intense d’aujourd’hui ou de demain en endurance facile ; à 3 (ou sommeil à 2), le volume baisse d’environ 20 %. La semaine entière n’est allégée que si la moyenne des 5 derniers jours (au moins 3 saisies) reste haute.</p>

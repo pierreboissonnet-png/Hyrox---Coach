@@ -207,8 +207,10 @@ input[type=range] { width: 100%; accent-color: var(--accent) }
 /* badge « Powered by Netlify » : on remonte la barre d'onglets pour qu'il ne la masque pas */
 .nl-badge .tabbar { bottom: calc(62px + env(safe-area-inset-bottom)) }
 .nl-badge .page { padding-bottom: calc(160px + env(safe-area-inset-bottom)) }
-.nl-badge .sheet { padding-bottom: calc(76px + env(safe-area-inset-bottom)) }
-.nl-badge .sheet-foot { margin-bottom: calc(-76px - env(safe-area-inset-bottom)); padding-bottom: calc(66px + env(safe-area-inset-bottom)) }
+/* Badge Netlify : on garde la marge normale de la feuille (sinon le pied « Enregistrer » recouvrait les champs
+   et la feuille ne défilait plus) ; c'est le pied qui s'allonge pour passer au-dessus du badge */
+.nl-badge .sheet:not(:has(.sheet-foot)) { padding-bottom: calc(76px + env(safe-area-inset-bottom)) }
+.nl-badge .sheet-foot { padding-bottom: calc(68px + env(safe-area-inset-bottom)) }
 
 .nl-badge .toast { bottom: calc(156px + env(safe-area-inset-bottom)) }
 
@@ -229,3 +231,6 @@ body:has(.backdrop) .toast { bottom: auto; top: calc(12px + env(safe-area-inset-
 /* Feuilles : défilement interne fiable (iPhone) et page derrière figée */
 .sheet { overscroll-behavior: contain; -webkit-overflow-scrolling: touch }
 html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
+/* Feuille avec pied collant : pas de marge négative (le pied collant recouvrait la fin du contenu sans permettre de défiler) */
+.sheet:has(.sheet-foot) { padding-bottom: 0 }
+.sheet:has(.sheet-foot) .sheet-foot { margin-bottom: 0 }

@@ -23,7 +23,7 @@ Sans configuration, l'application s'ouvre en **mode démo** (données fictives g
 | `supabase/schema.sql` | base de données et règles d'accès, à exécuter une fois |
 | `supabase/functions/coach` | analyse de chaque séance par Claude |
 | `supabase/functions/triage` | premier diagnostic d'un signalement de bug par Claude |
-| `supabase/functions/health-sync` | réception automatique des données de l'app Santé (sommeil, fréquence cardiaque) envoyées par l'iPhone |
+| `supabase/functions/health-sync` | réception automatique des données de l'app Santé envoyées par l'iPhone : sommeil, fréquence cardiaque, FC au repos, variabilité, VO2max, pas, énergie, poids, règles, entraînements de la montre |
 | `supabase/functions/coach-api` | 2e temps du coach : Claude lit les demandes d'analyse approfondie et y répond |
 | `outils/coach.mjs` | traitement des demandes d'analyse depuis un terminal ou par Claude |
 | `supabase/functions/bugs-api` | accès de service aux signalements (pour que Claude les lise et mette à jour leur suivi) |
@@ -227,6 +227,7 @@ Une application web ne peut pas lire l'app Santé : Apple réserve cet accès au
 1. **Base de données** : relancez `supabase/schema.sql`. Il crée les tables `health_tokens` et `hr_samples`.
 2. **Fonction serveur** : dans Edge Functions, créez la fonction `health-sync`.
    - Elle comporte **deux fichiers** : `index.ts` et `logic.ts` (bouton « Add file » dans l'éditeur).
+   - Plus simple : collez le fichier unique `health-sync-index.ts` (les deux regroupés) comme seul `index.ts`.
    - Désactivez **Verify JWT** : un jeton personnel remplace la session.
    - Avec la ligne de commande, la commande équivalente est `supabase functions deploy health-sync --no-verify-jwt`.
    - Facultatif : si votre fuseau horaire n'est pas l'heure de Paris, ajoutez le secret `DEFAULT_TZ` (par défaut `Europe/Paris`).

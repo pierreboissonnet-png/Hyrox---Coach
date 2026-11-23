@@ -7,6 +7,8 @@ import { todayISO, frDate, fmt } from '../lib/hyrox.js'
 import { EXERCISES } from '../lib/custom.js'
 import { ZONES, ZONE, WHEN, ADVICE, isActive, redFlags, PAIN_RULE, hits, altFor } from '../lib/pain.js'
 import { STRETCHES, ROUTINES, ROUTINE, STRETCH, routineSec, playSteps, forZone, suggestRoutine } from '../lib/stretch.js'
+import { quickSession } from '../lib/activity.js'
+import { Pose } from './Pose.jsx'
 
 // ---------------------------------------------------------------- douleurs
 export function Pains() {
@@ -77,41 +79,68 @@ export function StretchPage() {
   const list = STRETCHES.filter(s => zone === 'all' || s.zones.includes(zone))
   const zonesUsed = ZONES.filter(([k]) => STRETCHES.some(s => s.zones.includes(k)))
   return <Page back="#/moi" title="Étirements" subtitle="Routines minutées et banque de positions. Sans douleur, respiration lente, pas d’à-coups.">
-    <Sec title="Routines"><List>{ROUTINES.map(r => <Row key={r.id} icon="play" color="#30d158" title={r.name} sub={r.desc} value={Math.round(routineSec(r.items) / 60) + ' min'} onClick={() => setPlay(r)} />)}</List></Sec>
+    <Sec title="Séances longues" foot="Pour les jours sans renfo ou de repos : choisissez la durée. Validez chaque position avec « Fait ✓ » et enregistrez la séance à la fin : elle compte dans votre semaine."><List>{ROUTINES.filter(r => r.long).map(r => <Row key={r.id} icon="leaf" color="#64d2ff" title={r.name} sub={r.desc} value={Math.round(routineSec(r.items, r.mult) / 60) + ' min'} onClick={() => setPlay(r)} />)}</List></Sec>
+    <Sec title="Routines courtes"><List>{ROUTINES.filter(r => !r.long).map(r => <Row key={r.id} icon="play" color="#30d158" title={r.name} sub={r.desc} value={Math.round(routineSec(r.items) / 60) + ' min'} onClick={() => setPlay(r)} />)}</List></Sec>
     <h2 className="sec">Banque</h2>
     <Chips value={zone} onChange={setZone} label="Zones" options={[['all', 'Tout'], ...zonesUsed]} />
     <List>{list.map(s => <React.Fragment key={s.id}><Row title={s.name} sub={s.zones.map(z => ZONE[z]).join(', ') + (s.dyn ? ' · mobilité' : s.roll ? ' · rouleau' : '')} value={s.sec + ' s' + (s.side ? ' ×2' : '')} onClick={() => setOpenId(openId === s.id ? null : s.id)} />
-      {openId === s.id && <div className="row stack" style={{ background: 'var(--fill)' }}><span className="small">{s.how}</span><button className="btn tinted small" style={{ alignSelf: 'flex-start' }} onClick={() => setPlay({ id: s.id, name: s.name, items: [s.id] })}><Icon name="play" size={14} />Minuter</button></div>}
+      {openId === s.id && <div className="row stack" style={{ background: 'var(--fill)' }}><div style={{ alignSelf: 'center' }}><Pose id={s.id} size={170} /></div><span className="small">{s.how}</span><button className="btn tinted small" style={{ alignSelf: 'flex-start' }} onClick={() => setPlay({ id: s.id, name: s.name, items: [s.id] })}><Icon name="play" size={14} />Minuter</button></div>}
     </React.Fragment>)}</List>
     <p className="foot">Étirements statiques plutôt après l’effort ; avant, préférez la mobilité (mouvements lents). En cas de douleur, arrêtez et voyez Santé › Douleurs.</p>
     {play && <Player routine={play} onClose={() => setPlay(null)} />}
   </Page>
 }
 function Player({ routine, onClose }) {
-  const steps = useMemo(() => playSteps(routine.items), [routine])
+  const { user, reload } = useApp(), toast = useToast()
+  const steps = useMemo(() => playSteps(routine.items, routine.mult || 1), [routine])
   const [i, setI] = useState(0), [left, setLeft] = useState(steps[0] ? steps[0].sec : 0), [run, setRun] = useState(false), [prep, setPrep] = useState(5)
+  const [doneSet, setDoneSet] = useState(() => new Set()), [saved, setSaved] = useState(false)
   const st = steps[i]
   const tick = useRef(null)
+  const markDone = k => setDoneSet(S => { const n = new Set(S); n.add(k); return n })
   tick.current = () => {
     if (prep > 0) return setPrep(prep - 1)
     if (left > 1) return setLeft(left - 1)
     try { navigator.vibrate && navigator.vibrate(150) } catch {}
+    markDone(i)
     if (i + 1 < steps.length) { setI(i + 1); setLeft(steps[i + 1].sec); setPrep(5) } else { setLeft(0); setRun(false) }
   }
   useEffect(() => { if (!run) return; const t = setInterval(() => tick.current(), 1000); return () => clearInterval(t) }, [run])
   const go = k => { if (k < 0 || k >= steps.length) return; setI(k); setLeft(steps[k].sec); setPrep(5) }
+  // « Fait ✓ » : la position est validée, on passe à la suivante sans attendre la fin du minuteur
+  function validate() {
+    markDone(i); try { navigator.vibrate && navigator.vibrate(60) } catch {}
+    if (i + 1 < steps.length) { setI(i + 1); setLeft(steps[i + 1].sec); setPrep(run ? 5 : 0) } else { setLeft(0); setRun(false) }
+  }
   const done = !run && i === steps.length - 1 && left === 0
-  return <Sheet title={routine.name} onClose={onClose} footer={<div className="row-gap">
+  const secDone = [...doneSet].reduce((a, k) => a + (steps[k] ? steps[k].sec + 5 : 0), 0)
+  async function save() {
+    try {
+      const minutes = Math.max(1, Math.round(secDone / 60))
+      const q = quickSession({ uid: user.id, name: 'Étirements · ' + routine.name, ex: 'mobility', date: todayISO(), minutes, rpe: 2, note: doneSet.size + '/' + steps.length + ' positions' })
+      q.name = 'Étirements · ' + routine.name; q.data.title = q.name; q.data.stretch = { routine: routine.id, done: doneSet.size, of: steps.length }
+      await api.sessions.save(q); await reload(['sessions']); setSaved(true); toast('Séance d’étirements enregistrée (' + minutes + ' min) : elle compte dans votre semaine')
+    } catch (e) { toast('Enregistrement impossible : ' + e.message) }
+  }
+  return <Sheet title={routine.name} onClose={onClose} footer={<div className="row-gap" style={{ flexWrap: 'nowrap' }}>
     <button className="btn glass" onClick={() => go(i - 1)} disabled={i === 0}>Précédent</button>
-    <button className="btn" style={{ flex: 1 }} onClick={() => done ? (go(0), setRun(true)) : setRun(r => !r)}>{done ? 'Recommencer' : run ? 'Pause' : i === 0 && left === steps[0].sec ? 'Démarrer' : 'Reprendre'}</button>
+    <button className="btn" style={{ flex: 1 }} onClick={() => done ? (go(0), setDoneSet(new Set()), setSaved(false), setRun(true)) : setRun(r => !r)}>{done ? 'Recommencer' : run ? 'Pause' : i === 0 && left === steps[0].sec ? 'Démarrer' : 'Reprendre'}</button>
     <button className="btn glass" onClick={() => go(i + 1)} disabled={i >= steps.length - 1}>Suivant</button></div>}>
     {st && <div className="center">
-      <div className="small muted">{i + 1}/{steps.length}</div>
-      <h2 style={{ margin: '6px 0' }}>{st.name}{st.sideLabel ? <span className="muted small"> · {st.sideLabel}</span> : ''}</h2>
-      <div className="clock num" style={{ fontSize: 64 }}>{done ? '✓' : run && prep > 0 ? prep : fmt(left)}</div>
-      <div className="small muted">{done ? 'Routine terminée' : run && prep > 0 ? 'Mise en place…' : st.dyn ? 'Mouvement lent et contrôlé' : st.roll ? 'Roulez lentement' : 'Tenez, respirez lentement'}</div>
-      <p className="small" style={{ textAlign: 'left' }}>{st.how}</p>
-      {steps[i + 1] && <div className="tiny muted">Ensuite : {steps[i + 1].name}{steps[i + 1].sideLabel ? ' (' + steps[i + 1].sideLabel + ')' : ''}</div>}
+      <div className="row-gap" style={{ justifyContent: 'center' }}><span className="small muted">{i + 1}/{steps.length}</span><span className="small" style={{ color: 'var(--good)' }}>{doneSet.size ? '· ' + doneSet.size + ' faite(s) ✓' : ''}</span></div>
+      <div style={{ height: 6, background: 'var(--fill)', borderRadius: 99, margin: '6px 0' }}><div style={{ height: '100%', width: (doneSet.size / steps.length * 100) + '%', background: 'var(--good)', borderRadius: 99, transition: 'width .3s' }} /></div>
+      {!done && <div style={{ display: 'flex', justifyContent: 'center' }}><Pose id={st.id} size={180} /></div>}
+      <h2 style={{ margin: '4px 0' }}>{done ? 'Séance terminée' : st.name}{!done && st.sideLabel ? <span className="muted small"> · {st.sideLabel}</span> : ''}</h2>
+      <div className="clock num" style={{ fontSize: 56 }}>{done ? '✓' : run && prep > 0 ? prep : fmt(left)}</div>
+      {!done && <div className="small muted">{run && prep > 0 ? 'Mise en place…' : st.dyn ? 'Mouvement lent et contrôlé' : st.roll ? 'Roulez lentement' : 'Tenez, respirez lentement'}</div>}
+      {!done && <button className={'btn ' + (doneSet.has(i) ? 'glass' : 'tinted')} style={{ margin: '10px auto 4px', minWidth: 180 }} onClick={validate}>{doneSet.has(i) ? 'Déjà faite ✓ · suivante' : 'Fait ✓'}</button>}
+      {!done && <p className="small" style={{ textAlign: 'left' }}>{st.how}</p>}
+      {!done && steps[i + 1] && <div className="tiny muted">Ensuite : {steps[i + 1].name}{steps[i + 1].sideLabel ? ' (' + steps[i + 1].sideLabel + ')' : ''}</div>}
+      {(done || doneSet.size > 0) && <div className="glass card" style={{ textAlign: 'left', marginTop: 10 }}>
+        <b>{saved ? 'Séance enregistrée ✓' : 'Compter cette séance dans ma semaine'}</b>
+        <div className="small muted">{doneSet.size}/{steps.length} positions validées · environ {Math.max(1, Math.round(secDone / 60))} min. Elle apparaît dans vos séances et dans le programme (sans remplacer une séance d’entraînement).</div>
+        {!saved && <button className="btn block" style={{ marginTop: 8 }} onClick={save}>Enregistrer la séance d’étirements</button>}
+      </div>}
     </div>}
   </Sheet>
 }

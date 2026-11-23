@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { hasB } from '../lib/session.js'
 import { api } from '../lib/api.js'
-import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, go, Chips } from '../ui.jsx'
+import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, maskT, go, Chips } from '../ui.jsx'
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone } from '../lib/hyrox.js'
@@ -269,14 +269,20 @@ export function NewCustom() {
 // ---------------------------------------------------------------- chrono
 const buzz = () => { try { navigator.vibrate && navigator.vibrate(180) } catch {} try { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; const c = buzz.c || (buzz.c = new C()), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.18) } catch {} }
 function useNow(on) { const [n, setN] = useState(Date.now()); useEffect(() => { if (!on) return; const t = setInterval(() => setN(Date.now()), 200); return () => clearInterval(t) }, [on]); return n }
-function DoneForm({ st, onSave, compact }) {
+function DoneForm({ st, onSave, compact, withTime }) {
   const t = st.target || {}, d0 = st.done || {}
-  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: d0.rpe ?? 7 })
+  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: d0.rpe ?? 7, time: (d0.time ?? doneOf(st).time) != null ? fmt(d0.time ?? doneOf(st).time) : '' })
   const keys = st.ex === 'amrap' ? ['rounds', 'reps'] : ['meters', 'cal', 'reps', 'load'].filter(k => t[k] != null || d0[k] != null)
+  // Allure en direct (course : min/km ; rameur, SkiErg, vélo : /500 m)
+  const tSec = withTime ? parseT(v.time) : d0.time, m = parseNum(v.meters)
+  const pace = tSec > 0 && m > 0 ? (st.ex === 'run' || (EX[st.ex] || {}).cat === 'run' ? fmt(tSec / (m / 1000)) + ' /km' : ['ski', 'row', 'bike'].includes(st.ex) ? fmt(tSec / (m / 500)) + ' /500 m' : null) : null
+  const unit = k => k === 'meters' ? ' (m)' : k === 'load' ? ' (kg)' : k === 'cal' ? ' (kcal)' : ''
   return <div>
-    {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{st.ex === 'amrap' && k === 'reps' ? 'Reps en plus' : METRICS[k][0] + ' réalisé(e)'}<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
+    {withTime && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>Temps réalisé (min:s)<input style={inp} {...TIME} value={v.time} onChange={e => setV({ ...v, time: maskT(e.target.value) })} /></label>}
+    {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{st.ex === 'amrap' && k === 'reps' ? 'Reps en plus' : METRICS[k][0] + unit(k) + ' réalisé(e)'}<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
+    {pace && <div className="small" style={{ marginTop: 6 }}>Allure : <b className="num">{pace}</b>{t.time && t.meters ? <span className="muted"> · visée {fmt(t.time / (t.meters / (st.ex === 'run' ? 1000 : 500)))}</span> : ''}</div>}
     <div className="row-gap small" style={{ marginTop: 6 }}><span>Effort ressenti</span><input type="range" min="1" max="10" value={v.rpe} onChange={e => setV({ ...v, rpe: +e.target.value })} style={{ flex: 1 }} aria-label="Effort ressenti" /><b className="num">{v.rpe}/10</b></div>
-    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds), rpe: v.rpe })}>Valider</button>
+    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(withTime ? { time: tSec > 0 ? tSec : null } : d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds), rpe: v.rpe })}>Valider</button>
   </div>
 }
 export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
@@ -352,8 +358,7 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
       <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
-        <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>Temps réalisé<input style={inp} {...TIME} defaultValue={dn.time != null ? fmt(dn.time) : ''} onBlur={e => { const v = parseT(e.target.value); if (!Number.isNaN(v)) setDone(i, { ...(x.done || {}), time: v }) }} /></label>
-        <DoneForm st={x} onSave={v => { setDone(i, { ...v, time: (x.done && x.done.time) ?? (dn.time ?? null) }); setOpen(null) }} />
+        <DoneForm st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>
     <p className="foot">Touchez une étape pour saisir ou corriger le réalisé (utile pour une séance faite sans le chrono).</p>

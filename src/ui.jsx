@@ -1,5 +1,5 @@
 // Composants d'interface et icônes (dessinées pour l'app, aucune ressource Apple).
-import React, { useEffect, useState, createContext, useContext } from 'react'
+import React, { useEffect, useRef, useState, createContext, useContext } from 'react'
 
 const P = {
   home: <><path d="M4 11.5 12 5l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z" /></>,
@@ -104,8 +104,28 @@ export function Sheet({ title, onClose, children, actions, footer, noBug }) {
   useEffect(() => { const k = e => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k) }, [onClose])
   // Molette ou trackpad au-dessus du fond grisé : on fait défiler la feuille
   const wheel = e => { if (e.target === e.currentTarget) { const sh = e.currentTarget.querySelector('.sheet'); if (sh) sh.scrollTop += e.deltaY } }
+  // Glisser vers le bas pour fermer (depuis la poignée, l'en-tête, ou n'importe où si la feuille est en haut)
+  const ref = useRef(null), drag = useRef(null)
+  const onTS = e => {
+    const el = ref.current; if (!el || e.touches.length !== 1) return
+    const t = e.target, head = t.closest && t.closest('.grab, .sheet-head')
+    if (!head && (el.scrollTop > 0 || (t.closest && t.closest('input, textarea, select, [role=slider], .scroll-x')))) return
+    drag.current = { y: e.touches[0].clientY, dy: 0, t: Date.now(), head: !!head }
+  }
+  const onTM = e => {
+    const d = drag.current, el = ref.current; if (!d || !el) return
+    const dy = e.touches[0].clientY - d.y
+    if (dy <= 0 || (!d.head && el.scrollTop > 0)) { d.dy = 0; el.style.transform = ''; return }
+    d.dy = dy; el.style.transition = 'none'; el.style.transform = `translateY(${dy}px)`
+  }
+  const onTE = () => {
+    const d = drag.current, el = ref.current; drag.current = null; if (!d || !el) return
+    const fast = d.dy > 40 && Date.now() - d.t < 250
+    el.style.transition = 'transform .2s'
+    if (d.dy > 110 || fast) { el.style.transform = 'translateY(100%)'; setTimeout(onClose, 160) } else el.style.transform = ''
+  }
   return <div className="backdrop" onWheel={wheel} onClick={e => e.target === e.currentTarget && onClose()}>
-    <div className="sheet glass" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="sheet glass" role="dialog" aria-modal="true" aria-label={title} ref={ref} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onTouchCancel={onTE}>
       <div className="grab" />
       <div className="sheet-head"><button className="btn plain" onClick={onClose}>Fermer</button><h3>{title}</h3>
         <span className="row-gap" style={{ gap: 4, flexWrap: 'nowrap' }}>{actions || null}{!noBug && <button className="icon-btn bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème" style={{ width: 34, height: 34 }}><Icon name="bug" size={18} /></button>}{!actions && noBug && <span style={{ width: 60, display: 'inline-block' }} />}</span></div>

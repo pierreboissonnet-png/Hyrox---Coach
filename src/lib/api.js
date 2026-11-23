@@ -87,9 +87,12 @@ const supaApi = {
   coach: {
     request: async r => ok(await sb.from('coach_requests').insert(r).select('id,no').single()),
     requests: async sid => ok(await sb.from('coach_requests').select('id,no,status,question,created_at').eq('session_id', sid).order('no')),
+    // Analyse globale : demandes sans séance, réponses « global » (déposées par Claude directement en base)
+    globalRequests: async uid => ok(await sb.from('coach_requests').select('id,no,status,question,created_at').is('session_id', null).eq('user_id', uid).order('no', { ascending: false })),
+    globalAnswers: async uid => ok(await sb.from('coach_feedback').select('id,content,model,created_at,request_id').eq('scope', 'global').eq('user_id', uid).order('created_at', { ascending: false })),
     allRequests: async () => ok(await sb.from('coach_requests').select('*').order('no', { ascending: false }).limit(200)),
     setRequest: async (id, patch) => ok(await sb.from('coach_requests').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)),
-    answer: async (req, content) => { ok(await sb.from('coach_feedback').insert({ session_id: req.session_id, user_id: req.user_id, scope: 'session', content, model: 'Claude (analyse approfondie)', request_id: req.id })); return ok(await sb.from('coach_requests').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', req.id)) },
+    answer: async (req, content) => { ok(await sb.from('coach_feedback').insert({ session_id: req.session_id, user_id: req.user_id, scope: req.session_id ? 'session' : 'global', content, model: 'Claude (analyse approfondie)', request_id: req.id })); return ok(await sb.from('coach_requests').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', req.id)) },
     save: async row => ok(await sb.from('coach_feedback').insert({ ...row, user_id: (await sb.auth.getUser()).data.user.id }).select().single()),
     list: async sid => ok(await sb.from('coach_feedback').select('*').eq('session_id', sid).order('created_at', { ascending: false })),
     async ask(body) { const { data, error } = await sb.functions.invoke('coach', { body }); if (error) { let m = error.message; try { m = (await error.context.json()).error || m } catch {} throw new Error(m) } return data },
