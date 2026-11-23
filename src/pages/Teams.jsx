@@ -179,8 +179,10 @@ function TeamTrend({ t, objTotal }) {
   const T = useMemo(() => {
     if (lv.loading || sh.loading) return null
     const plans = plansOf(teams), today = todayISO(), sl = slotsOf(t), level = (lv.data || [])[0] || null
-    // Mon bilan (privé) pour moi ; celui du coéquipier seulement s'il l'a partagé
-    const lvOf = uid => uid === profile.id ? level : ((sh.data || []).find(x => x.user_id === uid) || null)
+    // Mêmes données pour les deux coéquipiers (sinon chacun voit une courbe différente) : un bilan « Mon niveau »
+    // n'entre dans les courbes du duo que s'il est partagé. Le mien non partagé sert seulement à mes objectifs déclarés.
+    const mineShared = !!(level && level.data && level.data.share)
+    const lvOf = uid => uid === profile.id ? (mineShared ? level : null) : ((sh.data || []).find(x => x.user_id === uid) || null)
     const race = upcoming(races).filter(r => r.team_id === t.id).sort((a, b) => (a.priority === 'A' ? 0 : 1) - (b.priority === 'A' ? 0 : 1))[0] || null
     // Un seul objectif : le plus ambitieux entre la course et le plan
     const raceGoal = race && race.goal_seconds, goal = raceGoal && objTotal ? Math.min(raceGoal, objTotal) : (raceGoal || objTotal)
@@ -201,7 +203,7 @@ function TeamTrend({ t, objTotal }) {
       const m = t.members.find(x => x.user_id === u), pts = solo[u], s0 = firstOf(pts), now = lastOf(pts), L = lvOf(u)
       const G = withSelf(gapsOf(statsAt(u, sessions, plans, L, today), { profile: m ? m.profile : {} }), L && L.data && L.data.self).filter(g => g.kind !== 'test').slice(0, 3)
       return { u, me: u === profile.id, name: m ? m.profile.display_name : '?', color: u === sl.A ? COLORS.A : COLORS.B, now: now && now[1], target: s0 && r ? Math.round(s0[1] * r) : null, gaps: G,
-        shared: u === profile.id ? !!(level && level.data && level.data.share) : !!L, self: (L && L.data && L.data.self) || null }
+        shared: u === profile.id ? mineShared : !!L, self: ((u === profile.id ? level : L) && (u === profile.id ? level : L).data && (u === profile.id ? level : L).data.self) || null }
     })
     // Prochain palier : là où la trajectoire attend le duo dans 4 semaines (ou à la prochaine course avant)
     const nowD = lastOf(duo), next = upcoming(races).find(x => x.team_id === t.id && raceIso && x.race_date < raceIso)
@@ -242,6 +244,7 @@ function TeamTrend({ t, objTotal }) {
       {w.gaps.length > 0 && <span className="small muted">Priorités du plan : {w.gaps.map(g => g.label).join(', ')}.</span>}
       {!w.me && !w.shared && <span className="small muted">{w.name} n’a pas encore partagé son niveau : ses objectifs et sa courbe apparaîtront ici s’il ou elle l’active dans « Mon niveau ».</span>}
     </div>)}</List>
+    {meHidden && <p className="small muted" style={{ margin: '8px 4px 0' }}>Votre bilan « Mon niveau » n’est pas partagé : il n’entre pas dans les courbes du duo, pour que vous voyiez tous les deux exactement la même courbe. Partagez-le pour qu’elle en tienne compte.</p>}
     {meHidden && <a className="btn glass small block" style={{ marginTop: 8 }} href="#/moi/niveau">Partager mon niveau avec {partnerHidden ? 'mon duo' : T.who.find(w => !w.me)?.name || 'mon duo'}</a>}
     {T.stepV != null && T.nowD && <>
       <h2 className="sec">Prochain objectif du duo</h2>
