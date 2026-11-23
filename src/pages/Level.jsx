@@ -40,7 +40,7 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
   async function save(over) {
     setBusy(true)
     try {
-      const data = { ...f, ...(over || {}), hours: parseNum(f.hours), updated: todayISO() }
+      const data = { ...f, ...(over && !over.nativeEvent && !over.target ? over : {}), hours: parseNum(f.hours), updated: todayISO() }
       if (cur) await api.journal.update(cur.id, { day: todayISO(), data }); else await api.journal.add({ kind: 'level', day: todayISO(), data })
       // Copie partagée avec le duo (sur accord) : mise à jour à chaque enregistrement, retirée si on ne partage plus
       let shareErr = ''
@@ -90,7 +90,7 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
     </Sec>
     <h2 className="sec">Ce que le plan en retient</h2>
     <div className="glass card">{preview.length ? preview.map((g, i) => <div className="tip" key={g.id}><span className={'dot ' + (i === 0 ? 'bad' : 'warn')} /><span className="small"><b>{g.label}</b> : {g.why}.</span></div>) : <div className="small muted">Pas de lacune nette avec ces informations : le plan alternera les ateliers.</div>}</div>
-    <button className="btn block" style={{ marginTop: 14 }} disabled={busy} onClick={save}>{busy ? 'Enregistrement…' : cur ? 'Mettre à jour mon bilan' : 'Enregistrer mon bilan'}</button>
+    <button className="btn block" style={{ marginTop: 14 }} disabled={busy} onClick={() => save()}>{busy ? 'Enregistrement…' : cur ? 'Mettre à jour mon bilan' : 'Enregistrer mon bilan'}</button>
     {cur && <a className="btn glass block" style={{ marginTop: 8 }} href="#/moi/programme"><Icon name="cal" size={16} />Voir le programme</a>}
     <p className="foot">Après un bilan, ouvrez le Programme : si vos lacunes ont changé, un lien propose de mettre le plan à jour.</p>
   </Page>
