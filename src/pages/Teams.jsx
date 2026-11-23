@@ -208,7 +208,8 @@ function TeamTrend({ t, objTotal }) {
     const a = fillStats(statsAt(sl.A, sessions, plans, lvOf(sl.A), today)), b = sl.B ? fillStats(statsAt(sl.B, sessions, plans, lvOf(sl.B), today)) : null
     const pred = a || b ? predictDuo(a || estimatePartner(b, prof(sl.B), prof(sl.A)), b || estimatePartner(a, prof(sl.A), prof(sl.B)), t.plan) : null, plan = normPlan(t.plan)
     const prio = pred ? STATIONS.map(x => ({ x, d: pred.seg[x.id] - (plan.obj[x.id] || 0) })).sort((p, q) => q.d - p.d)[0] : null
-    return { duo, solo, real, expected, goal, race, raceIso, who, nowD, stepIso, stepV, next, prio, sl, conflict }
+    const rough = !!((a && a.rough) || (b && b.rough))
+    return { duo, solo, real, expected, goal, race, raceIso, who, nowD, stepIso, stepV, next, prio, sl, conflict, rough }
   }, [lv.loading, sh.loading, sessions, teams, races, t])
   async function alignRace() {
     try { await api.races.save({ id: T.race.id, goal_seconds: T.conflict.objTotal }); await reload(['races']); toast('Objectif de la course aligné sur le plan') } catch (e) { toast('Modification impossible : ' + e.message) }
@@ -217,14 +218,14 @@ function TeamTrend({ t, objTotal }) {
     const P = normPlan(t.plan), f = T.conflict.raceGoal / T.conflict.objTotal, obj = Object.fromEntries(Object.entries(P.obj).map(([k, v]) => [k, Math.round(v * f)]))
     try { await api.teams.update(t.id, { plan: { ...t.plan, obj } }); await reload(['teams']); toast('Objectifs du plan alignés sur la course') } catch (e) { toast('Modification impossible : ' + e.message) }
   }
-  if (!T || !firstOf(T.duo)) return <div className="glass card small"><b>Tendances du duo</b><div className="muted">Les courbes apparaissent dès que l’app connaît l’allure de course et au moins 3 ateliers (séances du duo ou bilan « Mon niveau »).</div></div>
+  if (!T || !firstOf(T.duo)) return <div className="glass card small"><b>Tendances du duo</b><div className="muted">Les courbes apparaissent dès qu’une séance du duo contient des temps de course (ou que l’un de vous a rempli « Mon niveau »).</div></div>
   const partnerHidden = T.who.find(w => !w.me && !w.shared), meHidden = T.who.find(w => w.me && !w.shared)
   return <>
     <TrendCard title="Tendances du duo" raceIso={T.raceIso} goal={T.goal} expected={T.expected}
       lines={[{ label: 'Duo (estimé)', color: COLORS.C, pts: T.duo, dots: true, width: 3 },
         ...T.who.map(w => ({ label: w.name + ' (solo)', color: w.color, pts: T.solo[w.u], width: 1.5, opacity: 0.8 })),
         ...(T.real.length ? [{ label: 'Séances complètes', color: '#ff375f', pts: T.real, dots: true, width: 0.01 }] : [])]}
-      foot={T.race ? '' : 'Programmez un Hyrox avec ce duo pour voir la trajectoire jusqu’au jour J.'}>
+      foot={(T.rough ? 'Estimation approximative : peu de temps d’ateliers connus (pointez les relais en séance ou remplissez « Mon niveau » pour l’affiner). ' : '') + (T.race ? '' : 'Programmez un Hyrox avec ce duo pour voir la trajectoire jusqu’au jour J.')}>
       {T.conflict && <div className="note small" style={{ marginBottom: 0 }}>
         Deux objectifs différents : <b>{fmt(T.conflict.raceGoal)}</b> pour « {T.race.name} » et <b>{fmt(T.conflict.objTotal)}</b> dans le plan. La courbe vise le plus ambitieux ({fmt(T.goal)}).
         <div className="row-gap" style={{ marginTop: 6 }}>{T.conflict.raceGoal > T.conflict.objTotal

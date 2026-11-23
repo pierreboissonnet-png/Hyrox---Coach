@@ -16,7 +16,8 @@ test('Hyrox saisi après coup : points de passage, Roxzone déduite du total, re
 })
 
 test('courbe de progression : estimation solo et trajectoire attendue', () => {
-  assert.equal(fillStats({ pace: 300, st: { ski: 270 } }), null)   // trop peu d'ateliers
+  assert.equal(fillStats({ st: { ski: 270 } }), null)   // sans allure : pas d'estimation
+  const r = fillStats({ pace: 330, st: {} }); assert.ok(r.rough); assert.equal(Math.round(r.st.row), 280)   // allure de référence → ateliers de référence
   const t = soloTime({ pace: 300, st: { ski: 270, push: 200, row: 280 }, rox: 20 })   // ateliers connus = repères → reste aux repères
   assert.equal(t, 8 * 300 + 270 + 200 + 270 + 300 + 280 + 120 + 270 + 330 + 15 * 20)
   const E = expectedCurve('2026-11-01', 6000, '2027-02-01', 5000)

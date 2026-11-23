@@ -2,7 +2,7 @@
 // comparé à la trajectoire attendue entre le point de départ et l'objectif du jour J.
 import { STATIONS } from './hyrox.js'
 import { athleteStats, summary } from './analyze.js'
-import { withLevel, REF } from './gaps.js'
+import { withLevel, REF, REF_PACE } from './gaps.js'
 import { predictDuo, estimatePartner } from './predict.js'
 import { isCustom, isPlanned, isQuick } from './custom.js'
 
@@ -16,10 +16,12 @@ const isAth = (s, uid) => !!(s.athletes && Object.values(s.athletes).includes(ui
 export function fillStats(stats) {
   if (!stats || !stats.pace) return null
   const st = stats.st || {}, known = STATIONS.filter(x => st[x.id] > 0)
-  if (known.length < 3) return null
-  const ratio = known.reduce((a, x) => a + st[x.id] / REF[x.id], 0) / known.length
+  // Peu d'ateliers connus (séances duo sans relais pointés, pas de bilan) : on complète d'après l'allure de course,
+  // pour afficher une première courbe (marquée « approximative ») plutôt que rien.
+  const rs = known.map(x => st[x.id] / REF[x.id]); if (known.length < 3) rs.push(stats.pace / REF_PACE)
+  const ratio = rs.reduce((a, b) => a + b, 0) / rs.length
   const full = {}; STATIONS.forEach(x => { full[x.id] = st[x.id] > 0 ? st[x.id] : REF[x.id] * ratio })
-  return { ...stats, st: full, rox: stats.rox || 25, filled: STATIONS.length - known.length }
+  return { ...stats, st: full, rox: stats.rox || 25, filled: STATIONS.length - known.length, rough: known.length < 3 }
 }
 /** Temps solo estimé (8 × 1 km + 8 ateliers + 15 transitions) */
 export function soloTime(stats) {
