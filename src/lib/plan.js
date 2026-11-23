@@ -194,6 +194,17 @@ export const COACH_INFO = {
   autre: { what: 'cours encadré', ex: 'other' },
 }
 export const COACH_RPE = { facile: 4, modere: 6, intense: 8 }
+// Contenu possible d'un cours (facultatif, à préciser après coup) et ce qu'il travaille
+export const COACH_KINDS = {
+  spinning: [['endurance', 'Endurance'], ['intervalles', 'Intervalles / HIIT'], ['cotes', 'Côtes / force'], ['mixte', 'Mixte']],
+  crosstraining: [['force', 'Force'], ['metcon', 'Cardio / Metcon'], ['gym', 'Gymnastique'], ['mixte', 'Mixte']],
+  renfo: [['haut', 'Haut du corps'], ['bas', 'Bas du corps'], ['complet', 'Corps entier'], ['gainage', 'Gainage / abdos'], ['hiit', 'HIIT / cardio-renfo']],
+  course: [['fractionne', 'Fractionné'], ['seuil', 'Seuil / tempo'], ['endurance', 'Endurance'], ['cotes', 'Côtes']],
+  natation: [['technique', 'Technique'], ['endurance', 'Endurance'], ['intervalles', 'Intervalles']],
+  hyrox: [['ateliers', 'Ateliers'], ['compromis', 'Course + ateliers'], ['simu', 'Simulation'], ['force', 'Force spécifique']],
+  yoga: [['mobilite', 'Mobilité'], ['souplesse', 'Souplesse'], ['relax', 'Récupération']],
+  autre: [['cardio', 'Cardio'], ['renfo', 'Renforcement'], ['mixte', 'Mixte']],
+}
 export const COACH_ACTS = [['spinning', 'Spinning / RPM'], ['crosstraining', 'Cross-training / circuit'], ['renfo', 'Renforcement / body pump'], ['course', 'Course en club'], ['natation', 'Natation'], ['hyrox', 'Cours Hyrox'], ['yoga', 'Yoga / pilates'], ['autre', 'Autre cours']]
 const COACH_KEY = { spinning: ['z2', 'seuil'], crosstraining: ['compromis', 'ateliers', 'force'], renfo: ['force'], course: ['seuil', 'z2', 'allure'], natation: ['z2'], hyrox: ['compromis', 'ateliers', 'simu'], yoga: [], autre: [] }
 const COACH_ZONE = { facile: 'Z2', modere: 'Z3', intense: 'Z4' }

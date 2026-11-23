@@ -32,7 +32,8 @@ export function ShortcutGuide({ url, token }) {
       <p style={{ marginTop: 0 }}>Vous allez créer jusqu’à 3 raccourcis dans l’app <b>Raccourcis</b> (préinstallée sur l’iPhone), puis les lancer automatiquement. Comptez 10 minutes pour le premier, 5 pour les suivants.</p>
       <Box n="1"><b>Ouvrez cette page sur l’iPhone</b> (Safari › {location.host} › Moi › Réglages › Synchro Santé) : les boutons bleus <C t="token" label="comme celui-ci" /> copient le texte exact, à coller ensuite dans Raccourcis. Créez votre <b>jeton</b> en haut de la page depuis l’iPhone (un jeton créé ailleurs n’est plus affiché).</Box>
       <Box n="2">Ouvrez l’app <b>Raccourcis</b> › onglet <b>Raccourcis</b> › bouton <b>+</b> en haut à droite. Touchez le titre en haut pour le renommer.</Box>
-      <Box n="3">Ordre conseillé : <b>Hyrox Sommeil</b> (le plus utile), puis <b>Hyrox Mesures</b> (FC au repos, poids…), puis <b>Hyrox FC</b> (cardio des séances).</Box>
+      <Box n="3"><b>Réglage indispensable</b> : app <b>Réglages</b> de l’iPhone › <b>Raccourcis</b> › <b>Avancé</b> › activez <b>Autoriser le partage de grandes quantités de données</b>. Sans lui, l’iPhone bloque l’envoi (« cette action tente de partager … éléments Santé, ce qui n’est pas autorisé »).</Box>
+      <Box n="4">Ordre conseillé : <b>Hyrox Sommeil</b> (le plus utile), puis <b>Hyrox Mesures</b> (FC au repos, poids…), puis <b>Hyrox FC</b> (cardio des séances).</Box>
       <Tip>Au premier lancement, l’iPhone demande l’accès à Santé : touchez <b>Autoriser</b> pour chaque type de données. Rien n’est envoyé ailleurs que dans votre espace privé de l’app.</Tip>
     </> },
     { t: 'Raccourci « Hyrox Sommeil »', c: <>
@@ -68,7 +69,7 @@ export function ShortcutGuide({ url, token }) {
       <Box n="1">Dupliquez <b>Hyrox Sommeil</b> et renommez la copie <C t="Hyrox FC" />.</Box>
       <Box n="2">Dans la recherche, choisissez le type <b>Fréquence cardiaque</b>, période <b>1 jour</b>.</Box>
       <Box n="3">Dans « Obtenir le contenu de l’URL », gardez <b>token</b>, supprimez starts, ends et values, puis ajoutez :<Field k="dates" prop="Date de début" /><Field k="values" prop="Valeur" /></Box>
-      <Box n="4">Testez avec ▶ : <b>"hr_points"</b> doit être supérieur à 0. Sans boucle, l’envoi prend quelques secondes même avec des milliers de mesures.</Box>
+      <Box n="4">Testez avec ▶ : <b>"hr_points"</b> doit être supérieur à 0. Message « … éléments Santé, ce qui n’est pas autorisé » : activez Réglages › Raccourcis › Avancé › <b>Autoriser le partage de grandes quantités de données</b>. Sans boucle, l’envoi prend quelques secondes même avec des milliers de mesures.</Box>
       <Box n="5">Automatisation : onglet <b>Automatisation</b> › <b>+</b> › <b>Apple Watch</b> (ou « Entraînement ») › <b>Se termine</b> › <b>Exécuter immédiatement</b> › Hyrox FC.</Box>
       <Tip>Si l’automatisation « Entraînement » n’apparaît pas, ajoutez Hyrox FC à l’automatisation de 9:00 : le cardio arrivera le lendemain matin.</Tip>
     </> },
