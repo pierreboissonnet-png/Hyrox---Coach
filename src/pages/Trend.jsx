@@ -34,7 +34,7 @@ export function TrendCard({ title, lines, expected: expected0 = [], raceIso, goa
       {d != null && <span className={'badge ' + (d <= 30 ? (d < -30 ? 'good' : 'accent') : 'warn')}>{d < -30 ? 'en avance de ' + fmt(-d) : d > 30 ? 'en retard de ' + fmt(d) : 'dans la trajectoire'}</span>}</div>
     {zoomable && <div className="row-gap" style={{ margin: '6px 0 2px' }}><span className="tiny muted">{all ? 'Toute la préparation' : '8 dernières semaines et 4 à venir'}</span><span className="spacer" />
       <button className="btn glass small" onClick={() => setAll(!all)}>{all ? 'Vue récente' : 'Jusqu’au jour J'}</button></div>}
-    <LineChart height={190} series={[...band, ...L.map(l => ({ ...l, width: l.width || 2.5 }))]} marks={marks}
+    <LineChart height={190} invert series={[...band, ...L.map(l => ({ ...l, width: l.width || 2.5 }))]} marks={marks}
       xFmt={v => frDate(isoOfNum(Math.round(v))).slice(0, 5)} yFmt={v => fmt(v)} />
     <div className="row-gap tiny" style={{ marginTop: 4 }}>
       {L.map(l => <span key={l.label} className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 3, borderRadius: 2, background: l.color, display: 'inline-block' }} />{l.label}</span>)}
@@ -42,7 +42,7 @@ export function TrendCard({ title, lines, expected: expected0 = [], raceIso, goa
     </div>
     <p className="small muted" style={{ marginBottom: 0 }}>
       {ref ? <>Estimation actuelle <b>{fmt(ref[1])}</b>{exp != null ? <> · attendu à ce stade <b>{fmt(Math.round(exp))}</b> ({fd(Math.round(d))})</> : ''}{goal ? <> · objectif <b>{fmt(goal)}</b>{raceIso ? ' le ' + frDate(raceIso) : ''}</> : ''}. </> : ''}
-      {expected0.length && expected0[0][1] === expected0[expected0.length - 1][1] && ref && ref[1] <= goal ? 'Objectif déjà à portée : vous pouvez viser plus ambitieux (onglet Courses). ' : 'Plus la courbe descend, plus le temps baisse. L’objectif : rester entre les deux pointillés fins. '}{foot || ''}</p>
+      {expected0.length && expected0[0][1] === expected0[expected0.length - 1][1] && ref && ref[1] <= goal ? 'Objectif déjà à portée : vous pouvez viser plus ambitieux (onglet Courses). ' : 'Temps rapides en haut : plus la courbe monte, plus vous progressez. L’objectif : rester entre les deux pointillés fins. '}{foot || ''}</p>
     {children}
   </div>
 }

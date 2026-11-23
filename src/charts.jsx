@@ -6,7 +6,7 @@ export const COLORS = { A: '#0a84ff', B: '#ff9f0a', C: '#30d158' }
 
 /** Courbes temps → valeur. series: [{name, color, pts:[[x,y]]}] ; bands: [{a,b,color}] */
 const yt0 = (a, b) => Array.from({ length: 5 }, (_, i) => a + (b - a) * i / 4)
-export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v), yFmt = v => Math.round(v), yMin, yMax, marks = [] }) {
+export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v), yFmt = v => Math.round(v), yMin, yMax, marks = [], invert = false }) {
   const W = 640, H = height * 1.25, R = 10, T = 10, B = 30
   const all = series.flatMap(s => s.pts).filter(p => p[1] != null && Number.isFinite(p[1]))   // les trous (null) ne comptent pas dans l'échelle
   if (!all.length) return null
@@ -15,7 +15,7 @@ export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v)
   if (y1 === y0) { y1 += 1; y0 -= 1 }
   const pad = (y1 - y0) * 0.08; if (yMin == null) y0 -= pad; if (yMax == null) y1 += pad
   const L = 14 + 11 * Math.max(...yt0(y0, y1).map(v => String(yFmt(v)).length))
-  const X = v => L + (v - x0) / (x1 - x0 || 1) * (W - L - R), Y = v => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B)
+  const X = v => L + (v - x0) / (x1 - x0 || 1) * (W - L - R), Y = v => T + (invert ? (v - y0) / (y1 - y0) : 1 - (v - y0) / (y1 - y0)) * (H - T - B)   // invert : les temps courts en haut (progression = la courbe monte)
   const ticks = 4, yt = Array.from({ length: ticks + 1 }, (_, i) => y0 + (y1 - y0) * i / ticks)
   const xt = Array.from({ length: 5 }, (_, i) => x0 + (x1 - x0) * i / 4)
   const path = pts => { let d = '', pen = false; pts.forEach(([x, y], i) => { if (y == null) { pen = false; return } d += (pen ? 'L' : 'M') + X(x).toFixed(1) + ' ' + Y(y).toFixed(1); pen = true }); return d }

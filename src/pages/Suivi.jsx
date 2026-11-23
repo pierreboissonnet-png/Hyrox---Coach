@@ -83,12 +83,12 @@ export function SuiviPage() {
       </div> })}</List> : <div className="glass card small muted">Pas encore de diagnostic : remplissez « Mon niveau » ou enregistrez une simulation.</div>}
     </Sec>
 
-    <Sec title="Progression par exercice" foot={prog && prog.better === 'up' ? 'Charge maximale par séance : plus haut = mieux.' : 'Plus bas = plus rapide.'}>
+    <Sec title="Progression par exercice" foot={prog && prog.better === 'up' ? 'Charge maximale par séance : plus haut = mieux.' : 'Temps et allures rapides en haut : plus la courbe monte, plus vous progressez.'}>
       {exs.length ? <>
         <Chips value={cur} onChange={setEx} label="Exercice" options={exs.slice(0, 14).map(id => [id, exName(id)])} />
         {prog && prog.pts.length ? <div className="glass card">
           <div className="small muted" style={{ marginBottom: 4 }}>{exName(cur)} · {prog.unit} · {prog.pts.length} séance(s)</div>
-          {prog.pts.length > 1 ? <LineChart height={150} series={[{ color: COLORS.A, width: 2.5, dots: true, pts: prog.pts.map(([, v], i) => [i, v]) }]} xFmt={v => { const p = prog.pts[Math.round(v)]; return p ? frDate(p[0]).slice(0, 5) : '' }} yFmt={v => prog.time ? fmt(v) : Math.round(v)} />
+          {prog.pts.length > 1 ? <LineChart height={150} invert={prog.better === 'down'} series={[{ color: COLORS.A, width: 2.5, dots: true, pts: prog.pts.map(([, v], i) => [i, v]) }]} xFmt={v => { const p = prog.pts[Math.round(v)]; return p ? frDate(p[0]).slice(0, 5) : '' }} yFmt={v => prog.time ? fmt(v) : Math.round(v)} />
             : <p className="small" style={{ margin: 0 }}>Une seule mesure pour l’instant : <b>{prog.time ? fmt(prog.pts[0][1]) : prog.pts[0][1] + ' kg'}</b> le {frDate(prog.pts[0][0])}. La courbe apparaît dès la deuxième.</p>}
           {prog.pts.length > 1 && (() => { const a = prog.pts[0][1], b = prog.pts[prog.pts.length - 1][1], d = b - a, good = prog.better === 'up' ? d > 0 : d < 0
             return <p className="small" style={{ marginBottom: 0 }}>Depuis le {frDate(prog.pts[0][0])} : <b className={good ? 'good' : d ? 'bad' : ''}>{prog.time ? (d < 0 ? '−' : '+') + fmt(Math.abs(d)) : (d > 0 ? '+' : '') + Math.round(d) + ' kg'}</b>{good ? ', en progrès.' : d ? ', à surveiller.' : ', stable.'}</p> })()}

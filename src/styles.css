@@ -234,3 +234,9 @@ html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
 /* Feuille avec pied collant : pas de marge négative (le pied collant recouvrait la fin du contenu sans permettre de défiler) */
 .sheet:has(.sheet-foot) { padding-bottom: 0 }
 .sheet:has(.sheet-foot) .sheet-foot { margin-bottom: 0 }
+
+/* En-tête figé avec titre compact au défilement */
+.nav { transition: background .2s, box-shadow .2s }
+.nav.stuck { background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 .5px 0 var(--sep); padding-bottom: 6px }
+.nav-title { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; font-size: 16px; opacity: 0; transition: opacity .2s; pointer-events: none }
+.nav.stuck .nav-title { opacity: 1 }

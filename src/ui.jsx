@@ -52,14 +52,18 @@ export function trackNav(hash) {
 export function go(hash, replace) { if (replace) { window.__hxReplace = true; location.replace(hash) } else location.hash = hash }
 function goBack(e, fallback) { const st = navStack(); if (st.length >= 2) { e.preventDefault(); history.back() } else if (!fallback) e.preventDefault() }
 export function Nav({ back, title, actions }) {
-  return <div className="nav">
+  // En-tête figé : dès que le grand titre sort de l'écran, la barre prend un fond et affiche le titre en petit (comme sur iPhone)
+  const [stuck, setStuck] = useState(false)
+  useEffect(() => { const f = () => setStuck(scrollY > 56); f(); addEventListener('scroll', f, { passive: true }); return () => removeEventListener('scroll', f) }, [])
+  return <div className={'nav' + (stuck ? ' stuck' : '')}>
     {back && <a className="back glass" href={back} onClick={e => goBack(e, back)}><Icon name="back" size={20} stroke={2.2} />Retour</a>}
+    {title && <span className="nav-title" aria-hidden={!stuck}>{title}</span>}
     <div className="actions">{actions}<button className="icon-btn glass bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème"><Icon name="bug" size={20} /></button></div>
   </div>
 }
 export function Page({ title, subtitle, back, actions, children }) {
   return <div className="page">
-    <Nav back={back} actions={actions} />
+    <Nav back={back} actions={actions} title={typeof title === 'string' ? title : null} />
     {title && <h1 className="large-title">{title}</h1>}
     {subtitle && <p className="subtitle">{subtitle}</p>}
     {children}

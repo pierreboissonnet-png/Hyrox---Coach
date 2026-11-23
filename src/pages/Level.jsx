@@ -85,7 +85,7 @@ function LevelForm({ cur, onSaved, profile, sessions, teams, toast }) {
     </Sec>
     </>}
     <Sec title="Partage avec mon duo" foot="Votre coéquipier voit alors votre courbe, votre ressenti et vos objectifs (charges, allure) sur la page du duo, pour viser ensemble les bons ateliers. Vos données de santé (sommeil, poids, cycle…) ne sont jamais partagées. Désactivable à tout moment.">
-      <List><div className="row"><span className="label"><span className="t">Partager mon niveau avec mon duo</span><span className="s">{f.share ? 'Partagé : visible par vos coéquipiers actuels' : 'Privé : visible par vous seul(e)'}</span></span>
+      <List><div className="row"><span className="label"><span className="t">Partager avec mon duo</span><span className="s">{f.share ? 'Partagé : visible par vos coéquipiers actuels' : 'Privé : visible par vous seul(e)'}</span></span>
         <Switch checked={f.share} label="Partager mon niveau avec mon duo" onChange={v => { setF(x => ({ ...x, share: v })); save({ share: v }) }} /></div></List>
     </Sec>
     <h2 className="sec">Ce que le plan en retient</h2>
