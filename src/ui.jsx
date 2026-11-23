@@ -58,7 +58,7 @@ export function Nav({ back, title, actions }) {
   return <div className={'nav' + (stuck ? ' stuck' : '')}>
     {back && <a className="back glass" href={back} onClick={e => goBack(e, back)}><Icon name="back" size={20} stroke={2.2} />Retour</a>}
     {title && <span className="nav-title" aria-hidden={!stuck}>{title}</span>}
-    <div className="actions">{actions}<button className="icon-btn glass bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème"><Icon name="bug" size={20} /></button></div>
+    <div className="actions">{actions}<a className="icon-btn glass" href="#/recherche" aria-label="Rechercher un menu ou une fonction" title="Rechercher"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg></a><button className="icon-btn glass bugbtn" data-bug onClick={() => dispatchEvent(new Event('hx-bug'))} aria-label="Signaler un problème" title="Signaler un problème"><Icon name="bug" size={20} /></button></div>
   </div>
 }
 export function Page({ title, subtitle, back, actions, children }) {

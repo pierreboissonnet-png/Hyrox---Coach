@@ -124,7 +124,7 @@ function SelfRow({ id, label, kind, v = {}, set, sex }) {
 const lk = { background: 'none', border: 0, padding: 0, color: 'var(--accent)', font: 'inherit', textDecoration: 'underline' }
 
 /** Courbe de progression individuelle : temps solo estimé vs trajectoire attendue jusqu'à l'objectif principal */
-function LevelTrend({ level }) {
+export function LevelTrend({ level }) {
   const { profile, sessions, teams, races } = useApp()
   const planJ = useLoad(() => api.journal.list('plan'), [])
   const main0 = mainRace(races), team0 = main0 && main0.format === 'duo' && main0.team_id ? teams.find(t => t.id === main0.team_id) : null

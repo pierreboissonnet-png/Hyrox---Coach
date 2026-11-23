@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, maskT, Chips } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Sheet, Empty, Icon, useToast, maskT, Chips, Stat, useLoad } from '../ui.jsx'
+import { RaceTeamTrend } from './Teams.jsx'
+import { LevelTrend } from './Level.jsx'
 import { fmt, parseT, frDate, daysUntil, todayISO } from '../lib/hyrox.js'
 import { RACE_TYPE, activeTeams, mainRace, upcoming, PRIORITY, teamName } from './common.js'
 
@@ -14,7 +16,7 @@ export default function Races() {
   const up = shown.filter(r => r.race_date >= todayISO()), past = shown.filter(r => r.race_date < todayISO()).reverse()
   const main = mainRace(races)
   const blank = { name: '', city: '', race_date: '', format: 'solo', division: 'open', category: profile.sex === 'F' ? 'femme' : 'homme', team_id: null, goal_seconds: null, result_seconds: null, notes: '', priority: upcoming(races).length ? 'B' : 'A' }
-  const item = r => <Row key={r.id} icon="flag" color={r.priority === 'A' ? '#ff375f' : r.format === 'duo' ? '#ff9f0a' : '#0a84ff'} title={<>{r.name}{main && r.id === main.id && <span className="badge accent" style={{ marginLeft: 6 }}>programme</span>}</>} onClick={() => setEdit(r)}
+  const item = r => <Row key={r.id} icon="flag" color={r.priority === 'A' ? '#ff375f' : r.format === 'duo' ? '#ff9f0a' : '#0a84ff'} title={<>{r.name}{main && r.id === main.id && <span className="badge accent" style={{ marginLeft: 6 }}>programme</span>}</>} href={'#/course/' + r.id}
     sub={`${frDate(r.race_date)}${r.city ? ' · ' + r.city : ''} · ${RACE_TYPE(r)}${r.team_id ? ' · ' + (teamName(teams, r.team_id) || 'duo') : ''} · ${PRIORITY[r.priority || 'B']}`}
     value={r.result_seconds ? fmt(r.result_seconds) : r.race_date >= todayISO() ? 'J−' + daysUntil(r.race_date) : r.goal_seconds ? fmt(r.goal_seconds) : ''} />
   return <Page title="Courses" actions={<button className="icon-btn glass" onClick={() => setEdit(blank)} aria-label="Ajouter une course"><Icon name="plus" /></button>}>
@@ -24,6 +26,38 @@ export default function Races() {
     </Sec>
     {past.length > 0 && <Sec title="Passées"><List>{past.map(item)}</List></Sec>}
     {edit && <RaceSheet race={edit} onClose={() => setEdit(null)} />}
+  </Page>
+}
+
+/** Fiche d'une course : comme l'écran d'une équipe, avec ses données, la courbe, et les liens vers l'équipe et le programme */
+export function RaceDetail({ id }) {
+  const { races, teams, profile, user } = useApp()
+  const [edit, setEdit] = useState(false)
+  const r = races.find(x => x.id === id)
+  const lv = useLoad(() => api.journal.list('level'), [])
+  if (!r) return <Page back="#/courses" title="Course"><Empty icon="flag">Course introuvable.</Empty></Page>
+  const team = r.team_id ? teams.find(t => t.id === r.team_id) : null
+  const main = mainRace(races), isMain = main && main.id === r.id, future = r.race_date >= todayISO()
+  const d = r.result_seconds && r.goal_seconds ? r.result_seconds - r.goal_seconds : null
+  return <Page back="#/courses" title={r.name} subtitle={`${frDate(r.race_date)}${r.city ? ' · ' + r.city : ''} · ${RACE_TYPE(r)}`}
+    actions={<button className="btn small glass" onClick={() => setEdit(true)}>Modifier</button>}>
+    <div className="stats">
+      <Stat k={future ? 'Jour J' : 'Date'} v={future ? 'J−' + daysUntil(r.race_date) : frDate(r.race_date)} d={PRIORITY[r.priority || 'B']} />
+      <Stat k="Objectif" v={r.goal_seconds ? fmt(r.goal_seconds) : '—'} d={r.goal_seconds ? '' : 'à définir'} />
+      {!future && <Stat k="Résultat" v={r.result_seconds ? fmt(r.result_seconds) : '—'} d={d != null ? (d <= 0 ? fmt(-d) + ' sous l’objectif' : fmt(d) + ' au-dessus') : ''} tone={d != null ? (d <= 0 ? 'good' : 'bad') : ''} />}
+      <Stat k="Format" v={r.format === 'duo' ? 'Duo' : 'Solo'} d={(r.division === 'pro' ? 'Pro' : 'Open') + (r.category ? ' · ' + r.category : '')} />
+    </div>
+    <List>
+      {team && <Row icon="team" color="#ff9f0a" title={team.name} sub="Voir l’équipe : coéquipiers, plan de course, séances" href={'#/equipe/' + team.id} />}
+      {team && <Row icon="cal" color="#ff9f0a" title="Plan de course du duo" sub="Répartition des relais et objectifs par atelier" href={'#/equipe/' + team.id + '/plan'} />}
+      {r.format === 'duo' && !team && <Row icon="team" color="#8e8e93" title="Associer une équipe" sub="Pour suivre la courbe du duo" onClick={() => setEdit(true)} />}
+      {isMain && <Row icon="cal" color="#5e5ce6" title="Programme jusqu’à cette course" sub="Objectif principal : pilote l’entraînement" href="#/moi/programme" />}
+      <Row icon="flag" color="#ff375f" title="Modifier la course" sub="Date, objectif, résultat, priorité, notes" onClick={() => setEdit(true)} />
+    </List>
+    {r.notes && <><h2 className="sec">Notes</h2><div className="glass card"><p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{r.notes}</p></div></>}
+    {future && team && <RaceTeamTrend t={team} />}
+    {future && !team && r.format === 'solo' && isMain && !lv.loading && <LevelTrend level={(lv.data || [])[0] || null} />}
+    {edit && <RaceSheet race={r} onClose={() => setEdit(false)} />}
   </Page>
 }
 
@@ -42,7 +76,7 @@ function RaceSheet({ race, onClose }) {
     if (race.id) row.id = race.id; else row.user_id = user.id
     try { await api.races.save(row); await reload(['races']); toast('Course enregistrée'); onClose() } catch (e) { setErr(e.message) }
   }
-  async function del() { if (!confirm('Supprimer cette course ?')) return; await api.races.remove(race.id); await reload(['races']); onClose() }
+  async function del() { if (!confirm('Supprimer cette course ?')) return; await api.races.remove(race.id); await reload(['races']); onClose(); if (location.hash.startsWith('#/course/')) location.hash = '#/courses' }
   return <Sheet title={race.id ? 'Course' : 'Nouvelle course'} onClose={onClose} actions={<button className="btn plain" onClick={save}>OK</button>}>
     <Seg value={f.format} onChange={set('format')} options={[['solo', 'Solo'], ['duo', 'Duo']]} />
     <Seg value={f.division} onChange={set('division')} options={[['open', 'Open'], ['pro', 'Pro']]} />

@@ -103,7 +103,7 @@ export function Program() {
   const make = () => save(createPlan(P.params({ perWeek })), 'Plan créé jusqu’à ' + (race ? race.name : 'dans 8 semaines'))
   const adjust = kind => {
     const level = kind === 'behind' ? Math.max(-1, (plan.level || 0) - 1) : kind === 'ahead' ? Math.min(1, (plan.level || 0) + 1) : plan.level || 0
-    const why = kind === 'behind' ? `Retard (${prog.why}) : volume ramené au niveau réellement suivi, séances manquées non rattrapées, séances clés conservées.`
+    const why = kind === 'behind' ? `Rythme réel (${prog.why}) : volume ajusté à ce qui est réellement suivi, rien à rattraper, séances clés conservées.`
       : kind === 'ahead' ? `Avance (${prog.why}) : volume et objectifs relevés d’un cran.`
       : kind === 'race' ? 'Course modifiée : plan recalculé.' : kind === 'auto' ? 'Mise à jour automatique de la semaine : bilan de niveau et séances faites pris en compte.' : `Plan recalculé (${perWeek} séances par semaine, lacunes mises à jour : ${gapLabels(an.gaps).join(', ') || 'aucune nette'}).`
     return save({ ...replan(plan, P.params({ perWeek, level }), why), autoWeek: mondayOf(today) }, kind === 'auto' ? 'Plan mis à jour pour la semaine' : 'Plan mis à jour')
@@ -197,10 +197,10 @@ export function Program() {
     : d.key === 'repos' ? <a className={'btn glass ' + (big ? '' : 'small')} href="#/moi/etirements"><Icon name="leaf" size={big ? 18 : 14} />Étirements</a>
     : d.blocks ? <button className={'btn ' + (big ? '' : 'small tinted')} onClick={() => launch(d)}>{d.date === today ? <><Icon name="play" size={big ? 18 : 14} />Préparer et lancer</> : <><Icon name="cal" size={big ? 18 : 14} />Pré-enregistrer</>}</button> : null
   const plannedOn = date => sessions.find(s => isPlanned(s) && s.session_date === date && isAthlete(s, profile.id))
-  const banner = prog.status !== 'ok' && <div className="glass card" style={{ borderLeft: '4px solid ' + (prog.status === 'ahead' ? 'var(--good, #30d158)' : 'var(--warn, #ff9f0a)') }}>
-    <b>{prog.status === 'behind' ? 'Vous avez pris du retard' : prog.status === 'ahead' ? 'Vous êtes en avance' : 'Votre course a changé'}</b>
-    <div className="small muted">{prog.why}. {prog.status === 'behind' ? 'Plutôt que de tout rattraper (risque de surcharge), le plan repart du niveau réellement suivi et garde les séances clés.' : prog.status === 'ahead' ? 'Le plan peut monter d’un cran : un peu plus de volume et des objectifs plus ambitieux.' : 'Le plan doit être recalculé pour la nouvelle date.'}</div>
-    <button className="btn small" style={{ marginTop: 8 }} disabled={busy} onClick={() => adjust(prog.status)}>{prog.status === 'behind' ? 'Adapter le plan au retard' : prog.status === 'ahead' ? 'Relever le plan' : 'Recalculer le plan'}</button>
+  const banner = prog.status !== 'ok' && <div className="glass card" style={{ borderLeft: '4px solid ' + (prog.status === 'ahead' ? 'var(--good, #30d158)' : 'var(--accent)') }}>
+    <b>{prog.status === 'behind' ? 'Deux semaines plus légères que prévu' : prog.status === 'ahead' ? 'Vous êtes en avance' : 'Votre course a changé'}</b>
+    <div className="small muted">{prog.why}. {prog.status === 'behind' ? 'Ça arrive, la vie passe avant le plan. Rien à rattraper : si vous voulez, le plan s’ajuste à votre rythme réel en gardant les séances qui comptent le plus.' : prog.status === 'ahead' ? 'Le plan peut monter d’un cran : un peu plus de volume et des objectifs plus ambitieux.' : 'Le plan doit être recalculé pour la nouvelle date.'}</div>
+    <button className="btn small" style={{ marginTop: 8 }} disabled={busy} onClick={() => adjust(prog.status)}>{prog.status === 'behind' ? 'Adapter le plan à mon rythme' : prog.status === 'ahead' ? 'Relever le plan' : 'Recalculer le plan'}</button>
   </div>
   return <Page back="#/moi" title="Programme" subtitle={`${week.phase.label}${plan.raceName ? ` · ${plan.raceName} J−${Math.max(0, daysUntil(plan.raceDate))}` : ''}`}>
     {banner}
@@ -339,6 +339,10 @@ const CoachFields = ({ t, set }) => <div style={{ display: 'grid', gridTemplateC
   <label>Durée (min)<input style={fs} inputMode="numeric" value={t.min} onChange={e => set({ min: e.target.value })} /></label>
   <label>Nom (facultatif)<input style={fs} value={t.label || ''} onChange={e => set({ label: e.target.value })} placeholder="RPM du lundi" /></label>
 </div>
+// Renfo sans coach : durée disponible (vide = durée proposée par le plan)
+const RenfoMin = ({ t, set }) => <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }} className="small">
+  <label>Durée (min)<input style={fs} inputMode="numeric" value={t.min || ''} placeholder="selon le plan" onChange={e => set({ min: e.target.value.replace(/\D/g, '') })} /></label>
+</div>
 const DAY_TYPES_T = [['free', 'Libre'], ['coach', 'Cours avec coach'], ['renfo', 'Renfo sans coach'], ['rest', 'Repos']]
 function TemplateSheet({ value, onClose, onSave }) {
   const [T, setT] = useState(() => DAYS.map((_, i) => ({ type: 'free', act: 'spinning', intensity: 'modere', min: 45, label: '', ...((value && value[i]) || {}) })))
@@ -348,10 +352,12 @@ function TemplateSheet({ value, onClose, onSave }) {
     <List>{DAYS.map((d, i) => { const t = T[i]; return <div className="row stack" key={d}>
       <div className="row-gap"><b style={{ width: 84 }}>{d}</b><select value={t.type} onChange={e => set(i, { type: e.target.value })} style={{ flex: 1 }} aria-label={'Type de ' + d}>{DAY_TYPES_T.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
       {t.type === 'coach' && <CoachFields t={t} set={p => set(i, p)} />}
+      {t.type === 'renfo' && <RenfoMin t={t} set={p => set(i, p)} />}
       {t.second ? <div style={{ paddingLeft: 12, borderLeft: '2px solid var(--accent)', marginTop: 4 }}>
         <div className="row-gap small"><span style={{ width: 72 }}>2e séance</span><select value={t.second.type} onChange={e => set(i, { second: { ...t.second, type: e.target.value } })} style={{ flex: 1 }} aria-label={'2e séance du ' + d}><option value="coach">Cours avec coach</option><option value="renfo">Renfo sans coach</option></select>
           <button className="icon-btn" aria-label="Retirer la 2e séance" onClick={() => set(i, { second: null })} style={{ width: 30, height: 30 }}><Icon name="close" size={14} /></button></div>
         {t.second.type === 'coach' && <CoachFields t={t.second} set={p => set(i, { second: { ...t.second, ...p } })} />}
+        {t.second.type === 'renfo' && <RenfoMin t={t.second} set={p => set(i, { second: { ...t.second, ...p } })} />}
       </div> : t.type !== 'rest' && <button className="btn plain small" style={{ alignSelf: 'flex-start', padding: '2px 0' }} onClick={() => set(i, { second: { type: 'renfo', act: 'renfo', intensity: 'modere', min: 45, label: '' } })}>+ 2e séance ce jour-là</button>}
     </div> })}</List>
   </Sheet>

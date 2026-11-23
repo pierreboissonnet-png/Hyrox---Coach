@@ -145,6 +145,7 @@ export function generateWeeks(o) {
       const isDuo = !!duoKey && key === duoKey
       const ctx = { focus: isDuo ? [...new Set([...(duo.focus || []), ...focus])] : focus, e1rm: o.e1rm, phase: ph.id, factor, pace: o.pace, duo: isDuo, partner: duo && duo.partner, self, prog: W > 1 ? w / (W - 1) : 1 }
       let min = r5(BASE_MIN[key] * (key === 'repos' ? 1 : factor) + (engineGap && key === 'z2' ? 10 : 0))
+      if (pk.renfo && pk.slotMin) min = r5(pk.slotMin)   // créneau sans coach : la durée choisie dans la semaine type est respectée
       ctx.min = min
       const [title, detail0] = describe(key, ctx), blocks = blocksFor(key, ctx)
       // consignes issues du ressenti (charge visée, technique) visibles dans le programme
@@ -214,7 +215,7 @@ export function placeKeys(keys, perWeek, template) {
   const left = [...keys], out = Array(7).fill(null), out2 = Array(7).fill(null)
   const coachOf = (t, i) => { const want = t.intensity === 'intense' ? [...(COACH_KEY[t.act] || [])].reverse() : COACH_KEY[t.act] || []
     const k = want.find(x => left.includes(x)); if (k) left.splice(left.indexOf(k), 1); return { i, key: 'coach', coach: t, replaces: k || null } }
-  const renfoOf = i => { const k = ['force', 'ateliers', 'compromis'].find(x => left.includes(x)); if (k) left.splice(left.indexOf(k), 1); return { i, key: k || 'force', renfo: true } }
+  const renfoOf = (i, t) => { const k = ['force', 'ateliers', 'compromis'].find(x => left.includes(x)); if (k) left.splice(left.indexOf(k), 1); return { i, key: k || 'force', renfo: true, slotMin: +(t && t.min) || null } }
   // 1. cours avec coach : ils remplacent la séance du plan la plus proche
   template.forEach((t, i) => {
     if (t && t.type === 'coach') out[i] = coachOf(t, i)
@@ -222,7 +223,7 @@ export function placeKeys(keys, perWeek, template) {
   })
   template.forEach((t, i) => { if (t && t.type === 'rest') out[i] = { i, key: 'repos', fixed: true } })
   // 2. renfo sans coach : la séance de force (sinon ateliers) du plan s'y place, avec un contenu ciblé
-  template.forEach((t, i) => { if (t && t.type === 'renfo' && !out[i]) out[i] = renfoOf(i); if (t && t.second && t.second.type === 'renfo' && !out2[i]) out2[i] = renfoOf(i) })
+  template.forEach((t, i) => { if (t && t.type === 'renfo' && !out[i]) out[i] = renfoOf(i, t); if (t && t.second && t.second.type === 'renfo' && !out2[i]) out2[i] = renfoOf(i, t.second) })
   // 3. le reste sur les jours libres, en espaçant (préférence aux créneaux habituels)
   const free = [0, 1, 2, 3, 4, 5, 6].filter(i => !out[i]), pref = [...SLOTS[6], 6]
   const order = [...free].sort((a, b) => pref.indexOf(a) - pref.indexOf(b))
@@ -298,7 +299,11 @@ export function progress(plan, doneOn, today, o = {}) {
   const total = work.length, doneAll = work.filter(d => d.date <= today && doneOn(d.date)).length
   const adh = past.length ? done.length / past.length : null, adh14 = recent.length ? rDone.length / recent.length : null
   let status = 'ok', why = ''
-  if (recent.length >= 3 && adh14 < 0.6) { status = 'behind'; why = `${recent.length - rDone.length} séance(s) manquée(s) sur les 2 dernières semaines (${Math.round(adh14 * 100)} % réalisées)` }
+  // Bienveillant : pas d'alerte les 2 premières semaines du plan ; les activités faites en plus compensent les séances manquées ;
+  // alerte seulement si moins de la moitié du plan a été suivie sur 2 semaines (au moins 4 séances prévues).
+  const young = plan.created && plan.created > addDays(today, -14)
+  const eff = recent.length ? Math.min(1, (rDone.length + Math.min(o.extras || 0, recent.length - rDone.length)) / recent.length) : null
+  if (!young && recent.length >= 4 && eff < 0.5) { status = 'behind'; why = `${rDone.length} séance(s) du plan sur ${recent.length} ces 2 dernières semaines${o.extras ? ' (+ ' + o.extras + ' activité(s) en plus)' : ''}` }
   else if (recent.length >= 3 && adh14 >= 0.9 && ((o.ach != null && o.ach >= 1.02) || (o.extras || 0) >= 2)) { status = 'ahead'; why = `${Math.round(adh14 * 100)} % des séances faites${o.ach != null && o.ach >= 1.02 ? ', objectifs dépassés (' + Math.round(o.ach * 100) + ' %)' : ''}${(o.extras || 0) >= 2 ? `, ${o.extras} séances en plus` : ''}` }
   if (o.raceChanged) { status = 'race'; why = 'la course visée a changé (date ou objectif principal)' }
   return { total, doneAll, past: past.length, done: done.length, adh, adh14, missedKey, status, why }

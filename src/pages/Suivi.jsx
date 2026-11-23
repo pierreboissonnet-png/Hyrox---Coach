@@ -46,7 +46,7 @@ export function SuiviPage() {
     <Chips value={range} onChange={setRange} label="Période" options={[['4', '4 semaines'], ['8', '8 semaines'], ['12', '12 semaines'], ...(plan && plan.created ? [['plan', 'Depuis le début du plan']] : [])]} />
     <div className="stats">
       <Stat k="Séances faites" v={tot.n} d={tot.stretch ? '+ ' + tot.stretch + ' étirements' : ''} />
-      <Stat k="Assiduité au plan" v={adh != null ? Math.round(adh * 100) + ' %' : '—'} d={plan ? tot.done + '/' + tot.due + ' séances prévues' : 'pas de plan actif'} tone={adh == null ? '' : adh >= 0.8 ? 'good' : adh >= 0.6 ? 'even' : 'bad'} />
+      <Stat k="Assiduité au plan" v={adh != null ? Math.round(adh * 100) + ' %' : '—'} d={plan ? tot.done + '/' + tot.due + ' séances prévues' : 'pas de plan actif'} tone={adh != null && adh >= 0.7 ? 'good' : ''} />
       <Stat k="Volume" v={n1(tot.min / 60) + ' h'} d={tot.planMin ? 'prévu ' + n1(tot.planMin / 60) + ' h' : ''} />
       <Stat k="Course" v={n1(tot.km) + ' km'} d={W.length ? n1(tot.km / W.length) + ' km/sem.' : ''} />
     </div>
@@ -55,22 +55,22 @@ export function SuiviPage() {
       <div className="glass card">{W.map(w => <div key={w.ws} style={{ display: 'grid', gridTemplateColumns: '44px 1fr 92px', gap: 8, alignItems: 'center', padding: '4px 0', fontSize: 13 }}>
         <span className="muted num">{w.label}</span>
         <span style={{ position: 'relative', height: 14, background: 'var(--fill)', borderRadius: 99 }}>
-          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (w.min / maxMin * 100) + '%', background: w.planMin && w.min < w.planMin * 0.7 ? 'var(--warn)' : 'var(--accent)', borderRadius: 99 }} />
+          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: (w.min / maxMin * 100) + '%', background: 'var(--accent)', borderRadius: 99 }} />
           {w.planMin > 0 && <span style={{ position: 'absolute', left: (w.planMin / maxMin * 100) + '%', top: -3, bottom: -3, width: 2, background: 'var(--ink-2)' }} />}
         </span>
         <span className="num small" style={{ textAlign: 'right' }}>{n1(w.min / 60)} h{w.km ? ' · ' + n1(w.km) + ' km' : ''}</span>
       </div>)}</div>
     </Sec>
 
-    {plan && <Sec title="Séances faites vs prévues" foot="Cumul depuis le début de la période. Quand la courbe verte s’éloigne de la grise, des séances du plan ont été sautées.">
+    {plan && <Sec title="Séances faites vs prévues" foot="Cumul depuis le début de la période. Un écart est normal : les activités en plus comptent aussi dans votre progression.">
       <div className="glass card">
         <LineChart height={160} series={[{ color: 'var(--ink-3)', width: 2, dash: '6 4', pts: cum.map(([i, p]) => [i, p]) }, { color: COLORS.C, width: 3, dots: true, pts: cum.map(([i, , d]) => [i, d]) }]} xFmt={xl} yFmt={v => Math.round(v)} yMin={0} />
         <div className="row-gap tiny" style={{ marginTop: 4 }}><span className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 3, background: COLORS.C, display: 'inline-block' }} />faites</span><span className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, borderTop: '2px dashed var(--ink-3)', display: 'inline-block' }} />prévues</span></div>
       </div>
     </Sec>}
 
-    {plan && <Sec title={'Séances sautées' + (skip.length ? ' (' + skip.length + ')' : '')} foot="Une séance faite autrement (cours, activité) se valide dans le programme. Inutile de tout rattraper : le plan se recalcule chaque semaine.">
-      {skip.length ? <List>{skip.slice(0, 12).map(d => <Row key={d.date + (d.slot || 1)} icon="cal" color="#ff9f0a" title={d.title} sub={d.day + ' ' + frDate(d.date) + (d.min ? ' · ' + d.min + ' min' : '') + (() => { const E = [...new Set((d.blocks || []).flatMap(b => b.type === 'group' ? (b.items || []).map(i => i.ex) : [b.ex]).filter(x => x && x !== 'run'))].slice(0, 3); return E.length ? ' · ' + E.map(exName).join(', ') : '' })()} href="#/moi/programme" />)}
+    {plan && <Sec title={'Séances du plan non faites' + (skip.length ? ' (' + skip.length + ')' : '')} foot="Pour mémoire, sans culpabiliser : rien n’est à rattraper, le plan se recalcule chaque semaine sur votre rythme réel. Une séance faite autrement (cours, activité) se valide dans le programme.">
+      {skip.length ? <List>{skip.slice(0, 12).map(d => <Row key={d.date + (d.slot || 1)} icon="cal" color="#8e8e93" title={d.title} sub={d.day + ' ' + frDate(d.date) + (d.min ? ' · ' + d.min + ' min' : '') + (() => { const E = [...new Set((d.blocks || []).flatMap(b => b.type === 'group' ? (b.items || []).map(i => i.ex) : [b.ex]).filter(x => x && x !== 'run'))].slice(0, 3); return E.length ? ' · ' + E.map(exName).join(', ') : '' })()} href="#/moi/programme" />)}
         {skip.length > 12 && <div className="row"><span className="small muted">… et {skip.length - 12} autres</span></div>}</List>
         : <div className="glass card small">Aucune séance du plan sautée sur la période. Bravo !</div>}
     </Sec>}
@@ -101,7 +101,7 @@ export function SuiviPage() {
         {[['Charge (min × effort)', w => w.load || null, COLORS.A, v => Math.round(v)], ['Fatigue (0 à 5)', w => w.fatigue, '#ff9f0a', n1], ['Sommeil (h)', w => w.sleepH, '#5e5ce6', n1], ['FC au repos', w => w.rhr, '#ff375f', v => Math.round(v)], ['Variabilité cardiaque (ms)', w => w.hrv, COLORS.C, v => Math.round(v)]]
           .filter(([, f]) => W.some(w => f(w) != null)).map(([l, f, c, fm]) => <div key={l} style={{ marginBottom: 8 }}>
             <div className="row-gap small"><b>{l}</b><span className="spacer" /><span className="num muted">{fm(f(W[W.length - 1]) ?? f([...W].reverse().find(w => f(w) != null)))}</span></div>
-            <LineChart height={70} series={[{ color: c, width: 2, dots: true, pts: W.map((w, i) => [i, f(w)]) }]} xFmt={xl} yFmt={fm} />
+            <LineChart height={96} series={[{ color: c, width: 2, dots: true, pts: W.map((w, i) => [i, f(w)]) }]} xFmt={xl} yFmt={fm} />
           </div>)}
       </div> : <div className="glass card small muted">Saisissez votre forme du jour (Moi › Forme du jour) ou synchronisez votre montre pour voir ces courbes.</div>}
     </Sec>}

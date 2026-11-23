@@ -3,7 +3,8 @@ import { api, configured, isDemo } from './lib/api.js'
 import { Icon, ToastHost, trackNav } from './ui.jsx'
 import { AuthPage, Onboarding, SetupPage, NewPassword } from './pages/Auth.jsx'
 import Home from './pages/Home.jsx'
-import Races from './pages/Races.jsx'
+import Races, { RaceDetail } from './pages/Races.jsx'
+import SearchPage from './pages/Search.jsx'
 import { Teams, TeamDetail, PlanEditor } from './pages/Teams.jsx'
 import { Sessions, NewSession, Compare } from './pages/Sessions.jsx'
 import SessionPage from './pages/Session.jsx'
@@ -118,6 +119,8 @@ export default function App() {
   let page
   if (!a) page = <Home />
   else if (a === 'courses') page = <Races />
+  else if (a === 'course' && b) page = <RaceDetail id={b} />
+  else if (a === 'recherche') page = <SearchPage />
   else if (a === 'equipe' && !b) page = <Teams />
   else if (a === 'equipe' && c === 'plan') page = <PlanEditor id={b} />
   else if (a === 'equipe') page = <TeamDetail id={b} />
@@ -129,7 +132,7 @@ export default function App() {
   else if (a === 'moi' && !b) page = <Me />
   else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, analyse: <AnalysisPage />, suivi: <SuiviPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
   else page = <Home />
-  const tab = '#/' + ({ seance: 'seances', comparer: 'seances' }[a] || a || '')
+  const tab = '#/' + ({ seance: 'seances', comparer: 'seances', course: 'courses' }[a] || a || '')
 
   return <Ctx.Provider value={ctx}><ToastHost>
     <Boundary key={hash} onReport={openBug}>{page}</Boundary>

@@ -23,6 +23,7 @@ export function Me() {
   const { profile, races } = useApp()
   const next = upcoming(races)[0]
   return <Page title="Moi" subtitle={`${profile.display_name} · ${profile.sex === 'F' ? 'Femme' : profile.sex === 'M' ? 'Homme' : 'Autre'} · ${new Date().getFullYear() - profile.birth_year} ans · ${profile.weight_kg} kg`}>
+    <a className="search-box glass" href="#/recherche"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg><span className="muted">Rechercher un menu ou une fonction…</span></a>
     <Sec title="Entraînement">
       <List>
         <Row icon="chart" color="#30d158" title="Suivi de l’entraînement" sub="Volume, km, séances faites ou sautées, progression, forme" href="#/moi/suivi" />
@@ -203,7 +204,7 @@ export function Health() {
   if (!profile.consent_health) return <Page back="#/moi" title="Santé"><div className="glass card"><h3>Accord nécessaire</h3><p className="muted small">Pour enregistrer poids, prises de sang{profile.sex === 'F' ? ', cycle' : ''} et forme, activez « Données de santé » dans les réglages. Ces données restent strictement privées.</p><a className="btn small" href="#/moi/reglages">Réglages</a></div></Page>
   const tabs = [['forme', 'Forme'], ['douleurs', 'Douleurs'], ['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : [])]
   return <Page back="#/moi" title="Santé" subtitle="Privé : visible par vous seul(e).">
-    <Chips value={tab} onChange={setTab} label="Rubriques" options={tabs} />
+    <div className="sticky-tabs"><Chips value={tab} onChange={setTab} label="Rubriques" options={tabs} /></div>
     {tab === 'douleurs' && <Pains />}
     {tab === 'sommeil' && <Sleep />}{tab === 'poids' && <Weight />}{tab === 'sang' && <Blood />}{tab === 'cycle' && profile.sex === 'F' && <Cycle />}{tab === 'forme' && <Wellbeing />}
   </Page>
@@ -215,6 +216,7 @@ function Sleep() {
   const yest = new Date(Date.now() - 864e5)
   const [f, setF] = useState({ day: todayISO(), bed: '23:00', wake: '07:00', awake: '', quality: 3, awakenings: '', nap: '', note: '' })
   const [imp, setImp] = useState('')
+  const [manual, setManual] = useState(false)   // saisie manuelle repliée par défaut
   const all = j.data || []
   const st = sleepStats(all, { days: 7, target }), st30 = sleepStats(all, { days: 30, target })
   const next = upcoming(races)[0]
@@ -249,7 +251,8 @@ function Sleep() {
     </div> : <p className="note">Notez vos nuits (ou importez-les depuis l’app Santé) : l’app calcule votre moyenne, votre dette de sommeil et adapte le programme.</p>}
     {nights.some(x => x.v) && <div className="glass card"><div className="small muted">14 dernières nuits (heures, siestes comprises)</div><Bars items={nights} target={target / 60} low={7} fmtV={v => fmtH(v * 60)} color="#5e5ce6" /></div>}
     {tips.length > 0 && <div className="glass card">{tips.map((t, i) => <div className="tip" key={i}><span className={'dot ' + t.tone} /><span className="small">{t.text}</span></div>)}</div>}
-    <h2 className="sec">Nuit dernière</h2>
+    {!manual ? <button className="btn glass block" style={{ marginTop: 12 }} onClick={() => setManual(true)}><Icon name="plus" size={16} />Saisir une nuit à la main</button> : <>
+    <div className="row-gap" style={{ marginTop: 14 }}><h2 className="sec" style={{ margin: 0 }}>Saisir une nuit</h2><span className="spacer" /><button className="btn plain small" onClick={() => setManual(false)}>Replier</button></div>
     <List>
       <Field label="Réveil le"><input type="date" value={f.day} onChange={e => setF({ ...f, day: e.target.value })} /></Field>
       <Field label="Coucher"><input type="time" value={f.bed} onChange={e => setF({ ...f, bed: e.target.value })} /></Field>
@@ -261,6 +264,7 @@ function Sleep() {
         <input type="range" min="1" max="5" value={f.quality} onChange={e => setF({ ...f, quality: +e.target.value })} aria-label="Qualité" /><div className="row-gap tiny faint"><span>très mauvaise</span><span className="spacer" /><span>excellente</span></div></div>
     </List>
     <button className="btn block" style={{ marginTop: 12 }} disabled={!asleep} onClick={save}>Enregistrer · {fmtH(asleep)} de sommeil</button>
+    </>}
     <h2 className="sec">Objectif et import</h2>
     <List>
       <div className="row"><span className="label"><span className="t">Objectif par nuit</span></span><div className="seg" style={{ margin: 0, width: 230 }}>{[[450, '7 h 30'], [480, '8 h'], [510, '8 h 30'], [540, '9 h']].map(([v, l]) => <button key={v} aria-pressed={target === v} onClick={() => setSettings({ sleepTarget: v })}>{l}</button>)}</div></div>

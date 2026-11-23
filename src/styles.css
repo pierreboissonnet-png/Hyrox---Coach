@@ -184,7 +184,7 @@ input[type=range] { width: 100%; accent-color: var(--accent) }
 
 /* ---------- graphiques ---------- */
 .chart { width: 100%; height: auto; display: block }
-.chart text { font-size: 19px; fill: var(--ink-2); font-family: var(--font) }
+.chart text { font-size: 11px; fill: var(--ink-2); font-family: var(--font) }
 .chart .grid { stroke: var(--sep); stroke-width: .6 }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin-top: 6px }
 .zones { display: flex; height: 12px; border-radius: 999px; overflow: hidden; margin: 6px 0 }
@@ -240,3 +240,12 @@ html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
 .nav.stuck { background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 .5px 0 var(--sep); padding-bottom: 6px }
 .nav-title { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; font-size: 16px; opacity: 0; transition: opacity .2s; pointer-events: none }
 .nav.stuck .nav-title { opacity: 1 }
+
+/* Onglets qui restent visibles sous l'en-tête figé (Santé…) */
+.sticky-tabs { position: sticky; top: calc(env(safe-area-inset-top) + 50px); z-index: 15; margin: 0 -16px; padding: 6px 16px 4px; background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); border-radius: 0 0 16px 16px }
+
+/* Recherche */
+.search-box { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 42px; border-radius: 12px; margin: 4px 0 14px; color: var(--ink-2); text-decoration: none }
+.search-box input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink); outline: none; min-width: 0; height: 100% }
+.search-box input::-webkit-search-cancel-button { display: none }
+.search-clear { border: 0; background: var(--fill); color: var(--ink-2); width: 22px; height: 22px; border-radius: 50%; font-size: 16px; line-height: 1; cursor: pointer }

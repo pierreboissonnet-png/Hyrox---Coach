@@ -1,30 +1,47 @@
 // Graphiques SVG légers (sans bibliothèque).
-import React from 'react'
+import React, { useLayoutEffect, useRef, useState } from 'react'
 import { fmt } from './lib/hyrox.js'
 
 export const COLORS = { A: '#0a84ff', B: '#ff9f0a', C: '#30d158' }
 
 /** Courbes temps → valeur. series: [{name, color, pts:[[x,y]]}] ; bands: [{a,b,color}] */
+/** Largeur réelle d'un élément (suivie au redimensionnement) */
+function useWidth(ref, def = 358) {
+  const [W, setW] = useState(def)
+  useLayoutEffect(() => { const el = ref.current; if (!el) return; const f = () => { const w = Math.round(el.getBoundingClientRect().width); if (w > 0) setW(w) }; f()
+    if (typeof ResizeObserver === 'undefined') return; const ro = new ResizeObserver(f); ro.observe(el); return () => ro.disconnect() }, [])
+  return W
+}
 const yt0 = (a, b) => Array.from({ length: 5 }, (_, i) => a + (b - a) * i / 4)
 export function LineChart({ series, bands = [], height = 180, xFmt = v => fmt(v), yFmt = v => Math.round(v), yMin, yMax, marks = [], invert = false }) {
-  const W = 640, H = height * 1.25, R = 10, T = 10, B = 30
+  // Le dessin suit la largeur réelle (1 unité = 1 px) : textes toujours à la même taille, sur iPhone comme sur grand écran
+  const ref = useRef(null), W = useWidth(ref)
+  const H = Math.round(height * 1.25 * Math.max(0.68, Math.min(W, 520) / 640)), R = 6, T = 8, B = 20
   const all = series.flatMap(s => s.pts).filter(p => p[1] != null && Number.isFinite(p[1]))   // les trous (null) ne comptent pas dans l'échelle
-  if (!all.length) return null
+  if (!all.length) return <div ref={ref} />
   const x0 = Math.min(...all.map(p => p[0])), x1 = Math.max(...all.map(p => p[0])) || 1
   let y0 = yMin ?? Math.min(...all.map(p => p[1])), y1 = yMax ?? Math.max(...all.map(p => p[1]))
-  if (y1 === y0) { y1 += 1; y0 -= 1 }
+  if (y1 === y0) { y1 += 1; if (yMin == null) y0 -= 1 }
   const pad = (y1 - y0) * 0.08; if (yMin == null) y0 -= pad; if (yMax == null) y1 += pad
-  const L = 14 + 11 * Math.max(...yt0(y0, y1).map(v => String(yFmt(v)).length))
+  const L = 10 + 6.6 * Math.max(...yt0(y0, y1).map(v => String(yFmt(v)).length))
   const X = v => L + (v - x0) / (x1 - x0 || 1) * (W - L - R), Y = v => T + (invert ? (v - y0) / (y1 - y0) : 1 - (v - y0) / (y1 - y0)) * (H - T - B)   // invert : les temps courts en haut (progression = la courbe monte)
-  const ticks = 4, yt = Array.from({ length: ticks + 1 }, (_, i) => y0 + (y1 - y0) * i / ticks)
-  const xt = Array.from({ length: 5 }, (_, i) => x0 + (x1 - x0) * i / 4)
+  // Moins de graduations sur les petits graphiques, et jamais deux fois la même étiquette (textes superposés)
+  const ticks = H < 90 ? 2 : 4, yt = Array.from({ length: ticks + 1 }, (_, i) => y0 + (y1 - y0) * i / ticks).filter((v, i, a) => i === 0 || String(yFmt(v)) !== String(yFmt(a[i - 1])))
+  const nx = W < 300 ? 3 : W < 600 ? 5 : 7, xt = Array.from({ length: nx }, (_, i) => x0 + (x1 - x0) * i / (nx - 1)).filter((v, i, a) => i === 0 || String(xFmt(v)) !== String(xFmt(a[i - 1])))
   const path = pts => { let d = '', pen = false; pts.forEach(([x, y], i) => { if (y == null) { pen = false; return } d += (pen ? 'L' : 'M') + X(x).toFixed(1) + ' ' + Y(y).toFixed(1); pen = true }); return d }
-  return <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Graphique">
+  // Courbe lissée (Catmull-Rom → Bézier) : angles arrondis, sans dépasser les points
+  const smoothPath = pts => {
+    const P = pts.filter(p => p[1] != null).map(([x, y]) => [X(x), Y(y)]); if (P.length < 3) return path(pts)
+    let d = 'M' + P[0][0].toFixed(1) + ' ' + P[0][1].toFixed(1)
+    for (let i = 0; i < P.length - 1; i++) { const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2, k = 1 / 6
+      d += ' C' + (p1[0] + (p2[0] - p0[0]) * k).toFixed(1) + ' ' + (p1[1] + (p2[1] - p0[1]) * k).toFixed(1) + ' ' + (p2[0] - (p3[0] - p1[0]) * k).toFixed(1) + ' ' + (p2[1] - (p3[1] - p1[1]) * k).toFixed(1) + ' ' + p2[0].toFixed(1) + ' ' + p2[1].toFixed(1) }
+    return d }
+  return <svg ref={ref} className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Graphique">
     {bands.map((b, i) => <rect key={i} x={X(b.a)} y={T} width={Math.max(0, X(b.b) - X(b.a))} height={H - T - B} fill={b.color} opacity=".12" />)}
-    {yt.map((v, i) => <g key={i}><line className="grid" x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} /><text x={L - 7} y={Y(v) + 6} textAnchor="end">{yFmt(v)}</text></g>)}
-    {xt.map((v, i) => <text key={i} x={X(v)} y={H - 6} textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}>{xFmt(v)}</text>)}
+    {yt.map((v, i) => <g key={i}><line className="grid" x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} /><text x={L - 5} y={Y(v) + 4} textAnchor="end">{yFmt(v)}</text></g>)}
+    {xt.map((v, i) => <text key={i} x={X(v)} y={H - 5} textAnchor={i === 0 ? 'start' : i === xt.length - 1 ? 'end' : 'middle'}>{xFmt(v)}</text>)}
     {marks.map((m, i) => <line key={i} x1={X(m)} x2={X(m)} y1={T} y2={H - B} stroke="var(--ink-3)" strokeWidth=".6" strokeDasharray="2 3" />)}
-    {series.map((s, i) => <path key={i} d={path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.dash || undefined} opacity={s.opacity || 1} />)}
+    {series.map((s, i) => <path key={i} d={s.smooth ? smoothPath(s.pts) : path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={s.dash || undefined} opacity={s.opacity || 1} />)}
     {series.filter(s => s.dots).map((s, i) => s.pts.map(([x, y], k) => y != null && <circle key={i + '-' + k} cx={X(x)} cy={Y(y)} r="3.2" fill={s.color} />))}
   </svg>
 }
@@ -61,14 +78,15 @@ export function Ring({ value, size = 170, color = 'var(--accent)' }) {
 
 /** Barres verticales (ex. heures de sommeil par nuit) avec ligne d'objectif */
 export function Bars({ items, target, height = 150, fmtV = v => v, color = 'var(--accent)', low }) {
-  const W = 640, H = height * 1.25, L = 8, R = 8, T = 14, B = 30
+  const ref = useRef(null), W = useWidth(ref)
+  const H = Math.round(height * 1.25 * Math.max(0.68, Math.min(W, 520) / 640)), L = 4, R = 4, T = 14, B = 20
   const max = Math.max(target || 0, ...items.map(i => i.v || 0)) * 1.12 || 1
   const bw = (W - L - R) / Math.max(1, items.length), Y = v => T + (1 - v / max) * (H - T - B)
-  return <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Graphique en barres">
+  return <svg ref={ref} className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Graphique en barres">
     {target && <><line x1={L} x2={W - R} y1={Y(target)} y2={Y(target)} stroke="var(--ink-3)" strokeDasharray="5 5" /><text x={W - R} y={Y(target) - 5} textAnchor="end">objectif {fmtV(target)}</text></>}
     {items.map((it, i) => <g key={i}>
       {it.v != null && <rect x={L + i * bw + bw * 0.18} width={bw * 0.64} y={Y(it.v)} height={H - B - Y(it.v)} rx={Math.min(8, bw * 0.2)} fill={low && it.v < low ? 'var(--warn)' : color} opacity={it.v ? 0.9 : 0.25} />}
-      {(items.length <= 14 || i % 2 === 0) && <text x={L + i * bw + bw / 2} y={H - 8} textAnchor="middle">{it.label}</text>}
+      {(items.length <= 14 || i % 2 === 0) && <text x={L + i * bw + bw / 2} y={H - 5} textAnchor="middle">{it.label}</text>}
     </g>)}
   </svg>
 }

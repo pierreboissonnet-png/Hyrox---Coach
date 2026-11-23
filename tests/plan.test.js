@@ -107,3 +107,22 @@ test('cours avec coach : ne pas y aller puis le remettre', async () => {
   assert.notEqual(d1.key, 'coach'); assert.equal(d1.key, d0.replaces || 'z2'); assert.ok(d1.blocks); assert.ok(d1.coachSkipped)
   const r = m.restoreCoach(q, mon, 1); assert.equal(r.weeks[2].days[0].key, 'coach'); assert.ok(!r.weeks[2].days[0].coachSkipped)
 })
+
+test('progression bienveillante : pas de « retard » les 2 premières semaines, activités en plus comptées', async () => {
+  const { progress, addDays } = await import('../src/lib/plan.js')
+  const today = '2026-11-23', mk = created => ({ created, weeks: [{ start: '2026-11-02', days: Array.from({ length: 21 }, (_, i) => ({ date: addDays('2026-11-02', i), key: i % 7 === 6 ? 'repos' : 'z2' })) }] })
+  const none = () => false
+  assert.equal(progress(mk('2026-11-16'), none, today).status, 'ok')                       // plan récent : aucune alerte
+  assert.equal(progress(mk('2026-11-02'), none, today).status, 'behind')                   // 2 semaines sans rien : on propose d'ajuster
+  const half = d => d.endsWith('3') || d.endsWith('5') || d.endsWith('7') || d.endsWith('9') || d.endsWith('1')
+  assert.equal(progress(mk('2026-11-02'), half, today, { extras: 3 }).status, 'ok')        // activités en plus : compensent
+})
+
+test('renfo sans coach : la durée choisie dans la semaine type est respectée', async () => {
+  const m = await import('../src/lib/plan.js')
+  const T = [{ type: 'renfo', min: '35' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free' }, { type: 'free', second: { type: 'renfo', min: 70 } }, { type: 'rest' }]
+  const p = m.createPlan({ race: { id: 'r', name: 'X', race_date: '2027-03-14', format: 'solo' }, from: '2026-11-20', perWeek: 4, gaps: [], template: T })
+  const w = p.weeks[2], mon = w.days.find(d => d.day === w.days[0].day && (d.slot || 1) === 1)
+  assert.ok(mon.title.includes('renfo sans coach')); assert.equal(mon.min, 35)
+  const sat2 = w.days.find(d => d.slot === 2); assert.ok(sat2); assert.equal(sat2.min, 70)
+})

@@ -66,7 +66,7 @@ export function realResults(sessions, plans, keep) {
  */
 export function expectedCurve(fromIso, E0, raceIso, goal) {
   const a = dayNum(fromIso), b = dayNum(raceIso); if (!(b > a) || !E0 || !goal) return []
-  if (goal >= E0) return [[a, goal], [b, goal]]   // objectif déjà à portée : la ligne d'objectif suffit
+  if (goal >= E0) return []   // objectif déjà à portée au départ : pas de trajectoire « d'écart », la prévision prend le relais
   const at = x => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return E0 - (E0 - goal) * (1 - Math.pow(1 - t, 1.6)) }
   const pts = []; for (let x = a; x < b; x += 7) pts.push([x, Math.round(at(x))]); pts.push([b, goal])
   return pts
@@ -80,3 +80,17 @@ export const valueAt = (pts, x) => {
 /** Dernier point connu d'une série */
 export const lastOf = pts => { const L = pts.filter(p => p[1] != null); return L.length ? L[L.length - 1] : null }
 export const firstOf = pts => pts.find(p => p[1] != null) || null
+
+/**
+ * Prévision : d'aujourd'hui (dernière estimation) jusqu'au jour J, une courbe qui progresse vers l'objectif
+ * (ou, s'il est déjà atteint, vers un gain réaliste de 0,3 % par semaine, plafonné à 3 %).
+ */
+export function forecastCurve(last, raceIso, goal) {
+  if (!last || !raceIso) return { pts: [], target: null }
+  const b = dayNum(raceIso); if (!(b > last[0])) return { pts: [], target: null }
+  const weeks = (b - last[0]) / 7, soft = Math.round(last[1] * (1 - Math.min(0.03, 0.003 * weeks)))
+  const target = goal && goal < last[1] ? goal : soft
+  const at = x => { const t = Math.min(1, Math.max(0, (x - last[0]) / (b - last[0]))); return last[1] - (last[1] - target) * (1 - Math.pow(1 - t, 1.6)) }
+  const pts = []; for (let x = last[0]; x < b; x += 7) pts.push([x, Math.round(at(x))]); pts.push([b, target])
+  return { pts, target, reached: !!(goal && goal >= last[1]) }
+}

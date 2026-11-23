@@ -2,7 +2,7 @@
 import React, { useState } from 'react'
 import { LineChart } from '../charts.jsx'
 import { fmt, fd, frDate } from '../lib/hyrox.js'
-import { isoOfNum, dayNum, valueAt, lastOf } from '../lib/trend.js'
+import { isoOfNum, dayNum, valueAt, lastOf, forecastCurve } from '../lib/trend.js'
 import { todayISO } from '../lib/hyrox.js'
 
 /**
@@ -19,30 +19,36 @@ export function TrendCard({ title, lines, expected: expected0 = [], raceIso, goa
   const zoomable = (race != null && race > hi) || Math.min(...xs) < lo
   const win = pts => all || !zoomable ? pts : pts.filter(p => p[0] >= lo && p[0] <= hi)
   const expected = all || !zoomable || !expected0.length ? expected0 : [...[lo, today, hi].map(x => x >= expected0[0][0] && x <= expected0[expected0.length - 1][0] ? [x, Math.round(valueAt(expected0, x))] : null).filter(Boolean), ...expected0.filter(p => p[0] > lo && p[0] < hi)].sort((a, b) => a[0] - b[0])
+  // Prévision : de la dernière estimation jusqu'au jour J, une courbe qui évolue vers l'objectif
+  const fc = forecastCurve(lines[main] && lastOf(lines[main].pts), raceIso, goal)
+  const fcPts = all || !zoomable ? fc.pts : fc.pts.filter(p => p[0] <= hi).concat(fc.pts.length && fc.pts[fc.pts.length - 1][0] > hi ? [[hi, Math.round(valueAt(fc.pts, hi))]] : [])
   const L = lines.map(l => ({ ...l, pts: win(l.pts) })).filter(l => l.pts.some(p => p[1] != null))
   if (!L.length) return null
   const band = expected.length ? [
-    { color: 'var(--good)', width: 1, opacity: .45, dash: '3 4', pts: expected.map(([x, y]) => [x, Math.round(y * 0.975)]) },
-    { color: 'var(--warn)', width: 1, opacity: .45, dash: '3 4', pts: expected.map(([x, y]) => [x, Math.round(y * 1.025)]) },
-    { color: 'var(--ink-3)', width: 2.5, opacity: .8, dash: '7 5', pts: expected },
+    { color: 'var(--good)', width: 1, opacity: .45, dash: '3 4', pts: expected.map(([x, y]) => [x, Math.round(y * 0.975)]), smooth: true },
+    { color: 'var(--warn)', width: 1, opacity: .45, dash: '3 4', pts: expected.map(([x, y]) => [x, Math.round(y * 1.025)]), smooth: true },
+    { color: 'var(--ink-3)', width: 2.5, opacity: .8, dash: '7 5', pts: expected, smooth: true },
   ] : []
+  const fcLine = fcPts.length > 1 ? [{ color: 'var(--accent)', width: 2.5, opacity: .9, dash: '2 5', pts: fcPts, smooth: true }] : []
   const ref = lines[main] && lastOf(lines[main].pts), exp = ref && expected0.length ? valueAt(expected0, ref[0]) : null, d = ref && exp != null ? ref[1] - exp : null
-  const allX = [...L.flatMap(l => l.pts), ...expected].map(p => p[0])
+  const allX = [...L.flatMap(l => l.pts), ...expected, ...fcPts].map(p => p[0])
   const marks = [today, raceIso ? dayNum(raceIso) : null].filter(x => x != null && x >= Math.min(...allX) && x <= Math.max(...allX))
   return <div className="glass card">
     <div className="row-gap" style={{ alignItems: 'baseline' }}><b>{title}</b><span className="spacer" />
-      {d != null && <span className={'badge ' + (d <= 30 ? (d < -30 ? 'good' : 'accent') : 'warn')}>{d < -30 ? 'en avance de ' + fmt(-d) : d > 30 ? 'en retard de ' + fmt(d) : 'dans la trajectoire'}</span>}</div>
+      {d != null && <span className={'badge ' + (d < -30 ? 'good' : 'accent')}>{d < -30 ? 'en avance de ' + fmt(-d) : d > 30 ? 'amélioration visée : ' + fmt(d) : 'dans la trajectoire'}</span>}</div>
     {zoomable && <div className="row-gap" style={{ margin: '6px 0 2px' }}><span className="tiny muted">{all ? 'Toute la préparation' : '8 dernières semaines et 4 à venir'}</span><span className="spacer" />
       <button className="btn glass small" onClick={() => setAll(!all)}>{all ? 'Vue récente' : 'Jusqu’au jour J'}</button></div>}
-    <LineChart height={190} invert series={[...band, ...L.map(l => ({ ...l, width: l.width || 2.5 }))]} marks={marks}
+    <LineChart height={190} invert series={[...band, ...fcLine, ...L.map(l => ({ ...l, width: l.width || 2.5, smooth: l.width !== 0.01 }))]} marks={marks}
       xFmt={v => frDate(isoOfNum(Math.round(v))).slice(0, 5)} yFmt={v => fmt(v)} />
     <div className="row-gap tiny" style={{ marginTop: 4 }}>
       {L.map(l => <span key={l.label} className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 3, borderRadius: 2, background: l.color, display: 'inline-block' }} />{l.label}</span>)}
-      {expected.length > 0 && <span className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 0, borderTop: '2px dashed var(--ink-3)', display: 'inline-block' }} />Trajectoire attendue (±2,5 %)</span>}
+      {expected.length > 0 && <span className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 0, borderTop: '2px dashed var(--ink-3)', display: 'inline-block' }} />Trajectoire depuis le départ (±2,5 %)</span>}
+      {fcLine.length > 0 && <span className="row-gap" style={{ gap: 4 }}><span style={{ width: 14, height: 0, borderTop: '2px dotted var(--accent)', display: 'inline-block' }} />Prévision jusqu’au jour J</span>}
     </div>
     <p className="small muted" style={{ marginBottom: 0 }}>
       {ref ? <>Estimation actuelle <b>{fmt(ref[1])}</b>{exp != null ? <> · attendu à ce stade <b>{fmt(Math.round(exp))}</b> ({fd(Math.round(d))})</> : ''}{goal ? <> · objectif <b>{fmt(goal)}</b>{raceIso ? ' le ' + frDate(raceIso) : ''}</> : ''}. </> : ''}
-      {expected0.length && expected0[0][1] === expected0[expected0.length - 1][1] && ref && ref[1] <= goal ? 'Objectif déjà à portée : vous pouvez viser plus ambitieux (onglet Courses). ' : 'Temps rapides en haut : plus la courbe monte, plus vous progressez. L’objectif : rester entre les deux pointillés fins. '}{foot || ''}</p>
+      {fc.target && fc.reached ? <>Objectif déjà à portée : la prévision vise <b>{fmt(fc.target)}</b> au jour J avec une progression régulière. </> : fc.target ? <>Prévision : <b>{fmt(fc.target)}</b> au jour J en suivant le plan. </> : ''}
+      {'Temps rapides en haut : plus la courbe monte, plus vous progressez. '}{foot || ''}</p>
     {children}
   </div>
 }

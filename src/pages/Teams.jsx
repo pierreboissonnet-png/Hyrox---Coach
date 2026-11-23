@@ -169,6 +169,8 @@ function Predictions({ team }) {
  * Tendances du duo : trajectoire visée, temps du duo estimé, temps solo de chacun ;
  * puis objectifs de chaque coéquipier et prochain palier à atteindre.
  */
+/** Courbe du duo affichée ailleurs (fiche course) */
+export function RaceTeamTrend({ t }) { const plan = normPlan(t.plan); return <TeamTrend t={t} objTotal={SEGS.reduce((a, g) => a + (plan.obj[g.id] || 0), 0)} /> }
 function TeamTrend({ t, objTotal }) {
   const { sessions, teams, races, profile, reload } = useApp(), toast = useToast()
   const sl0 = slotsOf(t), others = [sl0.A, sl0.B].filter(u => u && u !== profile.id)
@@ -286,6 +288,11 @@ export function PlanEditor({ id }) {
   const setRunAll = v => { const s = parseT(v); if (Number.isNaN(s) || s == null) return; setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 8; k++) o['r' + k] = s; return { ...p, obj: o } }) }
   const setSt = (sid, patch) => setPlan(p => ({ ...p, strat: { ...p.strat, [sid]: { ...p.strat[sid], ...patch } } }))
   const total = SEGS.reduce((a, g) => a + (plan.obj[g.id] || 0), 0)
+  // Répartition de chaque atelier selon les tranches saisies (part de A ; B = le reste)
+  const shareA = sid => { const st = plan.strat[sid]; if (!st || !st.t || !st.t.length || !st.tot) return null; return st.t.reduce((a, r) => a + (r.w === 'A' ? (r.b - r.a) : 0), 0) / st.tot }
+  const stTot = STATIONS.reduce((a, x) => a + (plan.obj[x.id] || 0), 0)
+  const allA = stTot ? STATIONS.reduce((a, x) => a + (shareA(x.id) ?? 0.5) * (plan.obj[x.id] || 0), 0) / stTot : null
+  const pct = v => Math.round(v * 100) + ' %'
   async function save() { await api.teams.update(t.id, { plan: { ...t.plan, ...plan } }); await reload(['teams']); toast('Plan enregistré'); location.hash = '#/equipe/' + t.id }
   return <Page back={'#/equipe/' + t.id} title="Plan du duo" subtitle={'Total visé ' + fmt(total)} actions={<button className="btn small" onClick={save}>Enregistrer</button>}>
     <h2 className="sec">Courses et Rox</h2>
@@ -296,17 +303,19 @@ export function PlanEditor({ id }) {
       <Field label="Rox sortie (chaque)"><input {...TIME} defaultValue={fmt(plan.obj.ro1)} onBlur={e => { const s = parseT(e.target.value); if (s) setPlan(p => { const o = { ...p.obj }; for (let k = 1; k <= 7; k++) o['ro' + k] = s; return { ...p, obj: o } }) }} /></Field>
     </List>
     <h2 className="sec">Ateliers et relais</h2>
-    <p className="foot" style={{ marginTop: -4, marginBottom: 8 }}><span className="dotA" />{nA} · <span className="dotB" />{nB}</p>
+    <p className="foot" style={{ marginTop: -4, marginBottom: 8 }}><span className="dotA" />{nA} · <span className="dotB" />{nB}{allA != null ? <> · sur l’ensemble des ateliers (pondéré par leur durée) : <b>{nA} {pct(allA)}</b> / <b>{nB} {pct(1 - allA)}</b></> : ''}</p>
     <List>
       {STATIONS.map(x => { const st = plan.strat[x.id], rel = planRelays(plan, x.id); return <React.Fragment key={x.id}>
-        <Row title={x.label} sub={rel.map(r => (r.w === 'A' ? nA : nB) + ' ' + r.label).join(' · ')} value={fmt(plan.obj[x.id])} onClick={() => setOpen(open === x.id ? null : x.id)} />
+        <Row title={x.label} sub={<>{rel.map(r => (r.w === 'A' ? nA : nB) + ' ' + r.label).join(' · ')}{shareA(x.id) != null && <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <span style={{ flex: 1, height: 6, borderRadius: 99, overflow: 'hidden', display: 'flex', maxWidth: 220 }}><span style={{ width: pct(shareA(x.id)), background: COLORS.A }} /><span style={{ flex: 1, background: COLORS.B }} /></span>
+            <span className="num" style={{ whiteSpace: 'nowrap' }}>{nA} {pct(shareA(x.id))} · {nB} {pct(1 - shareA(x.id))}</span></span>}</>} value={fmt(plan.obj[x.id])} onClick={() => setOpen(open === x.id ? null : x.id)} />
         {open === x.id && <div className="row stack" style={{ background: 'var(--fill)' }}>
           <div className="row-gap"><span className="small">Objectif</span><input className="num" style={{ width: 80, textAlign: 'right', background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} {...TIME} defaultValue={fmt(plan.obj[x.id])} onBlur={e => setObj(x.id, e.target.value)} />
             <span className="small">Unité</span><select value={st.u} onChange={e => { const u = e.target.value; setSt(x.id, { u, tot: u === 's' ? plan.obj[x.id] : x.tot, t: [] }) }} style={{ background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }}><option value={x.u}>{x.u.trim()}</option><option value="s">secondes</option></select>
             <span className="small">Changement</span><input type="number" style={{ width: 52, background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} value={st.trans} onChange={e => setSt(x.id, { trans: +e.target.value })} /><span className="small">s</span></div>
           <div className="row-gap">{[1, 2, 4, 8, 10].map(n => <button key={n} className="btn glass small" onClick={() => { const step = st.tot / n; setSt(x.id, { t: Array.from({ length: n }, (_, i) => ({ a: Math.round(i * step), b: Math.round((i + 1) * step), w: i % 2 ? 'B' : 'A', n: '' })) }) }}>{n} tranche{n > 1 ? 's' : ''}</button>)}</div>
           {st.t.map((r, i) => <div key={i} className="row-gap">
-            <span className="num small" style={{ width: 92 }}>{fmtU(r.a, st.u)} → {fmtU(r.b, st.u)}</span>
+            <span className="num small" style={{ width: 92 }}>{fmtU(r.a, st.u)} → {fmtU(r.b, st.u)}<span className="faint"> · {Math.round((r.b - r.a) / st.tot * 100)} %</span></span>
             <div className="seg" style={{ margin: 0, width: 150 }}>{['A', 'B'].map(w => <button key={w} aria-pressed={r.w === w} onClick={() => { const tt = st.t.map((q, k) => k === i ? { ...q, w } : q); setSt(x.id, { t: tt }) }}>{w === 'A' ? nA : nB}</button>)}</div>
             <input placeholder="note" value={r.n || ''} onChange={e => setSt(x.id, { t: st.t.map((q, k) => k === i ? { ...q, n: e.target.value } : q) })} style={{ flex: 1, minWidth: 70, background: 'var(--glass)', borderRadius: 8, padding: 6, border: 0 }} />
           </div>)}
