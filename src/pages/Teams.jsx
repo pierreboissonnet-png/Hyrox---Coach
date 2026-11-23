@@ -244,8 +244,8 @@ function TeamTrend({ t, objTotal }) {
       {w.gaps.length > 0 && <span className="small muted">Priorités du plan : {w.gaps.map(g => g.label).join(', ')}.</span>}
       {!w.me && !w.shared && <span className="small muted">{w.name} n’a pas encore partagé son niveau : ses objectifs et sa courbe apparaîtront ici s’il ou elle l’active dans « Mon niveau ».</span>}
     </div>)}</List>
-    {meHidden && <p className="small muted" style={{ margin: '8px 4px 0' }}>Votre bilan « Mon niveau » n’est pas partagé : il n’entre pas dans les courbes du duo, pour que vous voyiez tous les deux exactement la même courbe. Partagez-le pour qu’elle en tienne compte.</p>}
-    {meHidden && <a className="btn glass small block" style={{ marginTop: 8 }} href="#/moi/niveau">Partager mon niveau avec {partnerHidden ? 'mon duo' : T.who.find(w => !w.me)?.name || 'mon duo'}</a>}
+    {meHidden && <div className="glass card" style={{ marginTop: 14 }}><p className="small muted" style={{ margin: '0 0 12px' }}>Votre bilan « Mon niveau » n’est pas partagé : il n’entre pas dans les courbes du duo, pour que vous voyiez tous les deux exactement la même courbe. Partagez-le pour qu’elle en tienne compte.</p>
+      <a className="btn tinted small block" href="#/moi/niveau">Partager mon niveau avec {partnerHidden ? 'mon duo' : T.who.find(w => !w.me)?.name || 'mon duo'}</a></div>}
     {T.stepV != null && T.nowD && <>
       <h2 className="sec">Prochain objectif du duo</h2>
       <div className="glass card">
