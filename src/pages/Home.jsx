@@ -108,6 +108,7 @@ export default function Home() {
           <div title={d.title} style={{ height: 30, borderRadius: 8, marginTop: 3, background: bg, border: !rest && !done && !past ? '1.5px solid var(--accent)' : isT ? '1.5px solid var(--accent)' : '0', display: 'grid', placeItems: 'center', color: done && !rest ? '#fff' : 'var(--ink-3)', fontSize: 12, fontWeight: 700 }}>{done && !rest ? '✓' : rest ? '' : past ? '×' : (d.zone || '').replace('Z3–Z4', 'Z3')}</div></div> })}</div>
       <div className="small muted" style={{ marginTop: 8 }}>{focus ? <>Focus : <b>{focus.label}</b> · </> : null}charge 7 j : {tl.ratio != null && tl.chronic > 30 ? tl.ratio.toFixed(1).replace('.', ',') + ' × votre moyenne' : Math.round(tl.acute) + ' pts'}</div>
     </a>}
+    <a className="btn glass block small" style={{ margin: '8px 0 4px' }} href="#/moi/suivi"><Icon name="chart" size={16} />Suivi de l’entraînement : volume, km, séances sautées, progression</a>
 
     {profile.consent_health && <><h2 className="sec">Récupération</h2><a href="#/moi/sante?t=forme" style={{ color: 'inherit' }}><div className="stats three">
       <Stat k="Nuit" v={lastNight && lastNight.day >= new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? fmtH(lastNight.data.asleep) : '—'} d={sst ? 'moy. ' + fmtH(sst.avg) : 'à noter'} tone={sst && sst.avg < 420 ? 'bad' : ''} />

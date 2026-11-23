@@ -11,6 +11,7 @@ import { NewCustom } from './pages/Custom.jsx'
 import { Me, Nutrition, Supplements, Health, Profile, Settings, Import, HealthSync } from './pages/Me.jsx'
 import { BugSheet, BugsPage, AnalysesPage } from './pages/Bugs.jsx'
 import { AnalysisPage } from './pages/Analysis.jsx'
+import { SuiviPage } from './pages/Suivi.jsx'
 import { StretchPage } from './pages/Body.jsx'
 import { Program } from './pages/Plan.jsx'
 import { LevelPage } from './pages/Level.jsx'
@@ -126,7 +127,7 @@ export default function App() {
   else if (a === 'seance') page = <SessionPage id={b} tab={c} />
   else if (a === 'comparer') page = <Compare />
   else if (a === 'moi' && !b) page = <Me />
-  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, analyse: <AnalysisPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
+  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, analyse: <AnalysisPage />, suivi: <SuiviPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
   else page = <Home />
   const tab = '#/' + ({ seance: 'seances', comparer: 'seances' }[a] || a || '')
 

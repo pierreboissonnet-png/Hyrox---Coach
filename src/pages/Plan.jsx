@@ -223,6 +223,7 @@ export function Program() {
     </div>
 
     <div className="row-gap" style={{ gap: 6 }}>
+      <a className="btn glass small" style={{ flex: 1 }} href="#/moi/suivi"><Icon name="chart" size={14} />Suivi</a>
       <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a>
       <a className="btn glass small" style={{ flex: 1 }} href="#/moi/sante?t=douleurs"><Icon name="heart" size={14} />Douleur</a>
       <a className="btn glass small" style={{ flex: 1 }} href="#/seance/specifique?lib=1&back=%23%2Fmoi%2Fprogramme"><Icon name="bolt" size={14} />Séances</a>
