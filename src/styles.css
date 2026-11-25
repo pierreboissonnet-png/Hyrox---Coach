@@ -254,3 +254,5 @@ html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
 
 /* Titre figé masqué quand l'en-tête a des boutons en plus (il les chevaucherait) */
 .nav:has(.actions > :nth-child(3)) .nav-title { display: none }
+/* Feuilles : fond flouté (le contenu derrière ne doit pas se lire à travers) */
+.sheet { -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6) }

@@ -1,5 +1,6 @@
 // Composants d'interface et icônes (dessinées pour l'app, aucune ressource Apple).
 import React, { useEffect, useRef, useState, createContext, useContext } from 'react'
+import { createPortal } from 'react-dom'
 
 const P = {
   home: <><path d="M4 11.5 12 5l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z" /></>,
@@ -128,7 +129,8 @@ export function Sheet({ title, onClose, children, actions, footer, noBug }) {
     el.style.transition = 'transform .2s'
     if (d.dy > 110 || fast) { el.style.transform = 'translateY(100%)'; setTimeout(onClose, 160) } else el.style.transform = ''
   }
-  return <div className="backdrop" onWheel={wheel} onClick={e => e.target === e.currentTarget && onClose()}>
+  // Rendue à la racine de la page : une carte « verre » parente (backdrop-filter) la rendrait transparente et mal placée
+  return createPortal(<div className="backdrop" onWheel={wheel} onClick={e => e.target === e.currentTarget && onClose()}>
     <div className="sheet glass" role="dialog" aria-modal="true" aria-label={title} ref={ref} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE} onTouchCancel={onTE}>
       <div className="grab" />
       <div className="sheet-head"><button className="btn plain" onClick={onClose}>Fermer</button><h3>{title}</h3>
@@ -136,7 +138,7 @@ export function Sheet({ title, onClose, children, actions, footer, noBug }) {
       {children}
       {footer && <div className="sheet-foot">{footer}</div>}
     </div>
-  </div>
+  </div>, document.body)
 }
 /**
  * Saisie des temps au pavé numérique (sans « : » sur iPhone) : on tape les chiffres, les « : » se placent seuls.
