@@ -6,7 +6,7 @@ import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, Switch, useToast
 import { LineChart, DeltaBars, ZoneBar, COLORS } from '../charts.jsx'
 import { SEGS, N, STATION, STATIONS, normPlan, planRelays, fmt, fd, fp, tone, frDate, parseT, fmtU, kmStr } from '../lib/hyrox.js'
 import { todayISO } from '../lib/hyrox.js'
-import { normData, nextIdx, segStart, split, objCum, actions, relDur, relObj, relAmt, stStats, runKm, athKm, unitOf } from '../lib/session.js'
+import { normData, nextIdx, segStart, split, objCum, actions, relDur, relObj, relAmt, stStats, runKm, athKm, unitOf, qtyOf, qtyFrac } from '../lib/session.js'
 import { summary, insights, hrBySegment, slotOf, segmentDetail, cyclePerformance } from '../lib/analyze.js'
 import { phaseOn, adjustTime, PHASE_LABEL, PHASE_COLOR } from '../lib/health.js'
 import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned, stepLabel } from '../lib/custom.js'
@@ -212,6 +212,45 @@ function LastSplits({ d, plan, i }) {
 // =====================================================================
 // Temps (tableau, édition)
 // =====================================================================
+/** Répartition des relais d'une séance faite : qui a fait quoi, combien, couper ou fusionner un relais */
+function RelayEditor({ d, plan, who, commit }) {
+  const [open, setOpen] = useState(null)
+  const st = SEGS.map((g, i) => ({ g, i })).filter(x => x.g.type === 'st' && split(d, x.i) != null)
+  const amts = (id, rs) => rs.map((r, k) => { const a = relAmt(d, plan, id, k, r); return a ? a.b - a.a : null })
+  function save(id, rs, am) {
+    const nd = JSON.parse(JSON.stringify(d)); let c = 0
+    nd.relays[id] = rs.map((r, k) => { const x = { ...r }; if (am[k] != null && !Number.isNaN(am[k])) { x.a = c; x.b = c + am[k]; c += am[k] } else { delete x.a; delete x.b } return x })
+    commit(nd)
+  }
+  return <>
+    <h2 className="sec">Répartition des relais</h2>
+    <List>{st.map(({ g, i }) => {
+      const rs = d.relays[g.id] || [], am = amts(g.id, rs), u = unitOf(d, plan, g.id), stt = stStats(d, i)
+      const tot = w => rs.reduce((a, r, k) => a + (r.w === w && am[k] ? am[k] : 0), 0)
+      return <React.Fragment key={g.id}>
+        <Row title={g.label} sub={rs.length ? `${rs.length} relais · ${who('A')} ${tot('A') || '—'}${tot('A') ? ' ' + u : ''} (${fmt(stt.work.A)}) · ${who('B')} ${tot('B') || '—'}${tot('B') ? ' ' + u : ''} (${fmt(stt.work.B)})` : 'Aucun relais pointé'} onClick={() => setOpen(open === g.id ? null : g.id)} />
+        {open === g.id && <div className="row stack" style={{ background: 'var(--fill)' }}>
+          {!rs.length && <span className="small muted">Pas de relais pointés sur cet atelier : ajoutez-en un pour répartir le travail.</span>}
+          {rs.map((r, k) => <div key={k + '-' + rs.length + '-' + am[k] + r.w} className="row-gap small" style={{ flexWrap: 'nowrap', gap: 6 }}>
+            <span className="num muted" style={{ width: 18 }}>{k + 1}</span>
+            <div className="seg" style={{ margin: 0, width: 132, flexShrink: 0 }}>{['A', 'B'].map(w => <button key={w} aria-pressed={r.w === w} style={{ fontSize: 13, padding: '6px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => { const x = rs.map(z => ({ ...z })); x[k].w = w; save(g.id, x, am) }}>{(who(w) || w).split(' ')[0]}</button>)}</div>
+            <input inputMode="decimal" style={{ width: 58 }} defaultValue={am[k] ?? ''} placeholder={u} aria-label={'Quantité du relais ' + (k + 1)} onBlur={e => { const v = e.target.value.trim() === '' ? null : +e.target.value.replace(',', '.'); if (v === am[k]) return; const a2 = [...am]; a2[k] = v; save(g.id, rs, a2) }} />
+            <span className="num muted" style={{ flex: 1, textAlign: 'right' }}>{relDur(r) != null ? fmt(relDur(r)) : ''}</span>
+            <button className="btn plain small" style={{ padding: '2px 4px' }} title="Couper en deux relais" aria-label="Couper ce relais en deux" onClick={() => {
+              const x = rs.map(z => ({ ...z })), a2 = [...am], mid = r.s != null && r.e != null ? Math.round((r.s + r.e) / 2) : null, h = am[k] != null ? am[k] / 2 : null
+              x.splice(k + 1, 0, { ...r, w: r.w === 'A' ? 'B' : 'A', s: mid, e: r.e }); x[k].e = mid; a2.splice(k, 1, h, h); save(g.id, x, a2) }}>✂︎</button>
+            <button className="btn plain small" style={{ padding: '2px 4px', color: 'var(--bad)' }} title="Fusionner avec le relais voisin" aria-label="Supprimer ce relais" disabled={rs.length < 2} onClick={() => {
+              const x = rs.map(z => ({ ...z })), a2 = [...am], j = k > 0 ? k - 1 : 1
+              if (j < k) x[j].e = r.e; else x[j].s = r.s
+              a2[j] = a2[j] != null || a2[k] != null ? (a2[j] || 0) + (a2[k] || 0) : null; x.splice(k, 1); a2.splice(k, 1); save(g.id, x, a2) }}>✕</button>
+          </div>)}
+          {!rs.length && <button className="btn tinted small" onClick={() => { const a = d.cp[i - 1] ?? null, e = d.cp[i]; const x = [{ w: 'A', s: a, e }]; save(g.id, x, [STATION[g.id] && STATION[g.id].u === u ? STATION[g.id].tot : null]) }}>Ajouter un relais</button>}
+          <span className="tiny muted">Touchez un nom pour changer qui a fait le relais, la quantité ({u}) pour corriger la répartition. ✂︎ coupe un relais en deux (l’autre athlète prend la 2e moitié), ✕ le fusionne avec son voisin. Les temps d’atelier ne changent pas.</span>
+        </div>}
+      </React.Fragment> })}</List>
+  </>
+}
+
 function Times({ s, d, plan, duo, who, commit, patch, keeperOnly }) {
   const { reload } = useApp(), toast = useToast()
   const [edit, setEdit] = useState(false)
@@ -229,13 +268,20 @@ function Times({ s, d, plan, duo, who, commit, patch, keeperOnly }) {
   return <>
     <div className="row-gap" style={{ marginBottom: 8 }}><span className="spacer" /><button className="btn glass small" onClick={() => setEdit(!edit)}>{edit ? 'Terminer' : 'Modifier'}</button></div>
     <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Segment</th><th className="r">Temps</th><th className="r">Obj.</th><th className="r">Écart</th><th className="r">Cumul</th></tr></thead><tbody>
-      {SEGS.map((g, i) => { const v = split(d, i), o = plan.obj[g.id]; if (v != null) cum += v; return <tr key={g.id} className={g.type}>
-        <td>{g.label}{g.type === 'run' && runKm(d, g.id) !== 1 ? <span className="faint small"> · {kmStr(runKm(d, g.id))}</span> : ''}</td>
+      {SEGS.map((g, i) => { const v = split(d, i), o = g.type === 'st' ? Math.round(plan.obj[g.id] * qtyFrac(d, g.id)) : plan.obj[g.id]; if (v != null) cum += v; return <tr key={g.id} className={g.type}>
+        <td>{g.label}{g.type === 'run' && runKm(d, g.id) !== 1 ? <span className="faint small"> · {kmStr(runKm(d, g.id))}</span> : ''}{g.type === 'st' && qtyFrac(d, g.id) !== 1 ? <span className="faint small"> · {fmtU(qtyOf(d, g.id), STATION[g.id].u)}</span> : ''}</td>
         <td className="r num">{edit && v != null ? <input defaultValue={fmt(v, true)} onBlur={e => e.target.value !== fmt(v, true) && setSplit(i, e.target.value)} style={{ width: 70, textAlign: 'right', border: 0, background: 'var(--fill)', borderRadius: 6, padding: 3 }} /> : fmt(v, g.type === 'rox')}</td>
         <td className="r num faint">{fmt(o)}</td><td className={'r num ' + tone(v != null ? v - o : null)}>{v != null ? fd(v - o) : '—'}</td>
         <td className={'r num ' + tone(v != null ? cum - objCum(plan, i) : null)}>{v != null ? fmt(cum) : ''}</td></tr> })}
     </tbody></table></div>
+    {edit && duo && <RelayEditor d={d} plan={plan} who={who} commit={commit} />}
     {edit && <>
+      <h2 className="sec">Distances et quantités des ateliers</h2>
+      <List>{STATIONS.map(x => <div className="row" key={x.id}><span className="label"><span className="t">{x.label}</span><span className="s">Format officiel : {x.sub}</span></span>
+        <input inputMode="decimal" placeholder={String(x.tot)} defaultValue={(d.qty || {})[x.id] ?? ''} style={{ width: 70, textAlign: 'right' }} aria-label={x.label + ' quantité réalisée'}
+          onBlur={e => { const v = e.target.value.trim() === '' ? null : +e.target.value.replace(',', '.'); if (v === ((d.qty || {})[x.id] ?? null)) return; commit({ ...d, qty: { ...(d.qty || {}), [x.id]: v && v > 0 ? v : null } }) }} />
+        <span className="small muted" style={{ width: 34 }}>{x.u.trim()}</span></div>)}</List>
+      <p className="foot">Si un atelier n’a pas été fait en entier (ex. SkiErg 800 m), indiquez la quantité réelle : l’objectif et les estimations de niveau sont ajustés en proportion. Laissez vide pour le format officiel.</p>
       <h2 className="sec">Distances de course</h2>
       <List>
         <Field label="Distance par défaut" sub="km"><input type="number" step="0.05" defaultValue={d.runKm} onBlur={e => commit({ ...d, runKm: +e.target.value || 1 })} /></Field>

@@ -251,3 +251,6 @@ html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
 .search-box input { flex: 1; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink); outline: none; min-width: 0; height: 100% }
 .search-box input::-webkit-search-cancel-button { display: none }
 .search-clear { border: 0; background: var(--fill); color: var(--ink-2); width: 22px; height: 22px; border-radius: 50%; font-size: 16px; line-height: 1; cursor: pointer }
+
+/* Titre figé masqué quand l'en-tête a des boutons en plus (il les chevaucherait) */
+.nav:has(.actions > :nth-child(3)) .nav-title { display: none }

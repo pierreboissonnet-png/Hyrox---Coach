@@ -144,3 +144,10 @@ test('coach intégré (gratuit)', async () => {
   const cd = C.emptyCustom([{ ex: 'squat', sets: 1, rest: 0, w: 'A', target: { reps: 6, load: 80 } }]); cd.startedAt = 0; cd.steps[0].s = 0; cd.steps[0].e = 30000; cd.steps[0].done = { reps: 6, load: 80 }
   assert.match(localCoach({ athletes: { A: 'a' }, data: cd }, null, w => w), /Squat/)
 })
+
+test('atelier raccourci : quantité réelle et objectif ajusté', async () => {
+  const { qtyOf, qtyFrac } = await import('../src/lib/session.js')
+  const d = { qty: { ski: 800 } }
+  assert.equal(qtyOf(d, 'ski'), 800); assert.equal(qtyFrac(d, 'ski'), 0.8)
+  assert.equal(qtyOf(d, 'row'), 1000); assert.equal(qtyFrac({}, 'wb'), 1)
+})

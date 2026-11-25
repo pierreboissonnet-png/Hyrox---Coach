@@ -26,6 +26,9 @@ export function endMs(d) {
 export function objCum(plan, i) { let t = 0; for (let k = 0; k <= i; k++) t += plan.obj[SEGS[k].id] || 0; return t }
 
 // Distances de course (km) : par course, et par athlète si l'un n'a pas tout couru
+/** Quantité réellement faite sur un atelier (ex. SkiErg 800 m au lieu de 1000) et fraction du format officiel */
+export const qtyOf = (d, id) => (d.qty && +d.qty[id] > 0) ? +d.qty[id] : (STATION[id] ? STATION[id].tot : null)
+export const qtyFrac = (d, id) => STATION[id] && d.qty && +d.qty[id] > 0 ? +d.qty[id] / STATION[id].tot : 1
 export const runKm = (d, id) => (d.runs && d.runs[id] && +d.runs[id].km) || d.runKm || 1
 export const athKm = (d, id, w) => (d.runs && d.runs[id] && d.runs[id][w] != null && d.runs[id][w] !== '') ? +d.runs[id][w] : runKm(d, id)
 export const isPartial = (d, id, w) => athKm(d, id, w) < runKm(d, id) * 0.8

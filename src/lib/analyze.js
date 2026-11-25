@@ -1,6 +1,6 @@
 // Analyses : statistiques par séance, par athlète (toutes équipes confondues) et conseils.
 import { SEGS, STATIONS, STATION, normPlan, fmt, fd } from './hyrox.js'
-import { normData, split, stStats, relDur, relAmt, totOf, unitOf, runKm, isPartial, totals, runTotals } from './session.js'
+import { normData, split, stStats, relDur, relAmt, totOf, unitOf, runKm, isPartial, totals, runTotals, qtyFrac } from './session.js'
 import { series, hrStat, zonesOf, zoneOf, hrAt } from './hr.js'
 import { phaseOn, phaseEffects, phaseWeight } from './health.js'
 import { isCustom, stationEquivalents } from './custom.js'
@@ -15,7 +15,7 @@ export function summary(s, planRaw) {
   const all = totals(d, plan), run = totals(d, plan, 'run'), rox = totals(d, plan, 'rox'), st = totals(d, plan, 'st')
   const rt = runTotals(d)
   const stations = STATIONS.map(x => {
-    const i = SEGS.findIndex(g => g.id === x.id), t = split(d, i), o = plan.obj[x.id]
+    const i = SEGS.findIndex(g => g.id === x.id), t = split(d, i), o = Math.round(plan.obj[x.id] * qtyFrac(d, x.id))
     return { id: x.id, label: x.label, t, o, d: t == null ? null : t - o, ...stStats(d, i) }
   })
   let trans = 0; stations.forEach(x => { if (x.trans != null) trans += x.trans })
@@ -45,9 +45,10 @@ export function athleteStats(uid, sessions, plansByTeam, { last = 8, weight = nu
       if (g.type === 'rox') { const v = split(d, i); if (v != null && v < 180) { roxSum += k * v; roxN += k } return }
       const id = g.id, u = unitOf(d, plan, id), tot = totOf(d, plan, id, u)
       const rel = d.relays[id] || []
-      if (!rel.length) { const v = split(d, i); if (v != null && !(s.athletes && s.athletes.B)) { acc[id].dur += k * v; acc[id].frac += k; acc[id].n++ } return }
+      const qf = qtyFrac(d, id)   // atelier raccourci ou allongé (ex. SkiErg 800 m) : ramené au format officiel
+      if (!rel.length) { const v = split(d, i); if (v != null && !(s.athletes && s.athletes.B)) { acc[id].dur += k * v; acc[id].frac += k * qf; acc[id].n++ } return }
       if (u === 's' || !tot) { // relais en temps : on prend le travail total de l'atelier pour les deux
-        const x = stStats(d, i); if (x.trans != null) { acc[id].dur += k * (x.work.A + x.work.B); acc[id].frac += k; acc[id].n++ } return
+        const x = stStats(d, i); if (x.trans != null) { acc[id].dur += k * (x.work.A + x.work.B); acc[id].frac += k * qf; acc[id].n++ } return
       }
       rel.forEach((r, k) => {
         if (r.w !== w) return
