@@ -263,6 +263,18 @@ export function runSuggestions(o) {
   return { days: freeDays, list: L.slice(0, 3), ratio }
 }
 /** Ajoute une séance proposée à un jour libre de la semaine */
+/** Échange le contenu de deux jours du plan (séance déplacée à un autre jour ; l'autre jour prend sa place) */
+export const CONTENT_KEYS = ['key', 'title', 'detail', 'zone', 'min', 'blocks', 'focus', 'duo', 'fixed', 'coach', 'replaces', 'coachSkipped', 'added', 'renfo']
+export function moveDay(plan, from, fromSlot, to, toSlot = 1) {
+  let A = null, B = null
+  plan.weeks.forEach(w => w.days.forEach(d => { if (d.date === from && (d.slot || 1) === (fromSlot || 1)) A = d; if (d.date === to && (d.slot || 1) === (toSlot || 1)) B = d }))
+  if (!A || !B || A === B) return plan
+  const pick = d => Object.fromEntries(CONTENT_KEYS.map(k => [k, d[k]]))
+  const ca = pick(A), cb = pick(B)
+  const fr = x => x.split('-').reverse().slice(0, 2).join('/')
+  return { ...plan, weeks: plan.weeks.map(w => ({ ...w, days: w.days.map(d => d === A ? { ...d, ...cb, moved: true } : d === B ? { ...d, ...ca, moved: true } : d) })),
+    log: [...(plan.log || []), { date: to, text: `Déplacée : ${A.title} du ${fr(from)} au ${fr(to)}` + (B.key !== 'repos' ? ` (${B.title} passe au ${fr(from)})` : '') }].slice(-20) }
+}
 export function addToWeek(plan, weekStart, date, s) {
   return { ...plan, weeks: plan.weeks.map(w => w.start !== weekStart ? w : { ...w, days: w.days.map(d => d.date !== date || (d.slot || 1) !== 1 ? d : { ...d, key: s.key, title: s.title, detail: s.detail, zone: s.zone, min: s.min, blocks: s.blocks, added: true }) }),
     log: [...(plan.log || []), { date, text: `Ajout : ${s.title} le ${date.split('-').reverse().slice(0, 2).join('/')}` }].slice(-20) }

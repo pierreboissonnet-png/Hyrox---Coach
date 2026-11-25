@@ -107,11 +107,11 @@ function SelfRow({ id, label, kind, v = {}, set, sex }) {
     onInput={e => { e.target.value = maskT(e.target.value) }} onBlur={e => { const p = e.target.value.split(':'); const n = p.length === 2 ? +p[0] * 60 + +p[1] : null; set({ ...v, [key]: n && isFinite(n) ? n : null }) }} aria-label={label + ' ' + key} />
   return <div className="row stack">
     <button className="row-gap" onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 0, padding: 0, color: 'inherit', font: 'inherit', textAlign: 'left', width: '100%' }}>
-      <b style={{ flex: 1 }}>{label}</b><span className={'small ' + (v.state && v.state !== 'maitrise' ? '' : 'muted')}>{cur || 'à évaluer'}{v.state && v.state !== 'maitrise' && v.urgency ? ' · ' + ['', 'urgence faible', 'urgence moyenne', 'urgence haute'][v.urgency] : ''}</span>
+      <b style={{ flex: 1 }}>{label}</b><span className={'small ' + (v.state && v.state !== 'maitrise' ? '' : 'muted')}>{cur || 'à évaluer'}{v.state && v.state !== 'inconnu' && v.urgency ? ' · ' + ['', 'urgence faible', 'urgence moyenne', 'urgence haute'][v.urgency] : ''}</span>
       <Icon name="chev" size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', opacity: .5 }} /></button>
     {open && <>
-      <Chips value={v.state} onChange={st => set({ ...v, state: st, urgency: v.urgency || 2 })} label={label} options={states} />
-      {v.state && !['maitrise', 'inconnu'].includes(v.state) && <div className="row-gap small" style={{ gap: 6 }}><span className="muted">Urgence</span><Chips value={v.urgency || 2} onChange={u => set({ ...v, urgency: u })} label="Urgence" options={URGENCY} /></div>}
+      <Chips value={v.state} onChange={st => set({ ...v, state: st, urgency: v.urgency || (st === 'maitrise' ? 1 : 2) })} label={label} options={states} />
+      {v.state && v.state !== 'inconnu' && <div className="row-gap small" style={{ gap: 6 }}><span className="muted">Urgence</span><Chips value={v.urgency || 2} onChange={u => set({ ...v, urgency: u })} label="Urgence" options={URGENCY} /></div>}
       {kind === 'station' && WEIGHTED.includes(id) && v.state && v.state !== 'inconnu' && <div className="small" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         <span className="muted">Charge {id === 'farm' ? 'par main' : ''} actuelle</span><input inputMode="decimal" style={{ width: 56 }} defaultValue={v.cur ?? ''} onBlur={e => set({ ...v, cur: parseNum(e.target.value) })} aria-label={label + ' charge actuelle'} />
         <span className="muted">visée</span><input key={v.target} inputMode="decimal" style={{ width: 56 }} defaultValue={v.target ?? ''} onBlur={e => set({ ...v, target: parseNum(e.target.value) })} aria-label={label + ' charge visée'} /><span className="muted">kg</span>

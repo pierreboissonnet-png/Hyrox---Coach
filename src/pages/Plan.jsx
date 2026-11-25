@@ -5,7 +5,7 @@ import { api } from '../lib/api.js'
 import { Page, Sec, List, Row, Seg, Icon, Empty, Sheet, Field, Chips, useToast, useLoad } from '../ui.jsx'
 import { fmt, frDate, todayISO, daysUntil, STATION } from '../lib/hyrox.js'
 import { buildProgram, wellNorm } from '../lib/program.js'
-import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, COACH_INFO, COACH_RPE, COACH_KINDS, runSuggestions, addToWeek, DAYS, skipCoach, restoreCoach } from '../lib/plan.js'
+import { createPlan, replan, progress, weekDone, mondayOf, addDays, blocksFor, INTENSE, gapLabels, COACH_ACTS, COACH_INFO, COACH_RPE, COACH_KINDS, runSuggestions, addToWeek, DAYS, skipCoach, restoreCoach, moveDay } from '../lib/plan.js'
 import { quickSession } from '../lib/activity.js'
 import { gapsOf, duoAdjust, withLevel, withSelf } from '../lib/gaps.js'
 import { athleteStats, summary, hrBySegment } from '../lib/analyze.js'
@@ -59,7 +59,9 @@ export function usePlanData() {
   // séances réalisées par date, cases cochées par semaine
   const byDate = useMemo(() => { const m = {}; sessions.filter(s => isAthlete(s, profile.id) && realDone(s)).forEach(s => { (m[s.session_date] = m[s.session_date] || []).push(s) }); return m }, [sessions])
   const manual = useMemo(() => { const m = {}; (doneJ.data || []).forEach(e => { (e.data.done || []).forEach(i => { m[addDays(e.day, i)] = true }) }); return m }, [doneJ.data])
-  const doneOn = d => !!(manual[d] || byDate[d])
+  // Jours où une séance enregistrée ne doit pas valider le plan (« Ne pas compter pour ce jour »)
+  const off = useMemo(() => { const m = {}; (doneJ.data || []).forEach(e => { (e.data.off || []).forEach(i => { m[addDays(e.day, i)] = true }) }); return m }, [doneJ.data])
+  const doneOn = d => !!(manual[d] || (byDate[d] && !off[d]))
   const ach14 = useMemo(() => { const v = sessions.filter(s => isCustom(s) && isAthlete(s, profile.id) && s.session_date >= addDays(today, -14) && s.session_date < today).map(s => customSummary(s).achievement).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null }, [sessions])
   const extras = useMemo(() => { if (!plan) return 0; const keyOf = {}; plan.weeks.forEach(w => w.days.forEach(d => { keyOf[d.date] = d.key })); let n = 0; Object.entries(byDate).forEach(([d, L]) => { if (d >= addDays(today, -14) && d < today) n += Math.max(0, L.length - (keyOf[d] && keyOf[d] !== 'repos' ? 1 : 0)) }); return n }, [plan, byDate])
   const raceChanged = !!(plan && race && (plan.raceId !== race.id || plan.raceDate !== race.race_date)) || !!(plan && !race && plan.raceId)
@@ -67,7 +69,7 @@ export function usePlanData() {
   const params = (o = {}) => ({ race, from: today, perWeek: o.perWeek || (plan && plan.perWeek) || 4, gaps: an.gaps, duo: an.duo, e1rm: ins.e1rm, pace: an.pace, level: o.level, template: o.template !== undefined ? o.template : template })
   const ready = !planJ.loading && !doneJ.loading && !lvl.loading && !tplJ.loading
   const mySessions = sessions.filter(s => isAthlete(s, profile.id))
-  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, prog, extras, params, today, sessions: mySessions }
+  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, off, prog, extras, params, today, sessions: mySessions }
 }
 
 function GapList({ gaps, empty }) {
@@ -81,6 +83,7 @@ function GapList({ gaps, empty }) {
 export function Program() {
   const { profile, sessions, teams, reload } = useApp(), toast = useToast()
   const P = usePlanData(), { race, plan, entry, an, ins, doneOn, byDate, prog, today } = P
+  const [moving, setMoving] = useState(null)
   const [perWeek, setPerWeek] = useState((plan && plan.perWeek) || 4)
   const [coachOpen, setCoachOpen] = useState(null), [notesOpen, setNotesOpen] = useState(false), [sel, setSel] = useState(null), [busy, setBusy] = useState(false), [quick, setQuick] = useState(false), [showDuo, setShowDuo] = useState(false)
   // contexte « du moment » pour la semaine affichée
@@ -166,13 +169,13 @@ export function Program() {
     return { ...d, blocks, painNote }
   })
   const W = weekDone(week, doneOn, today)
-  const manualIdx = ((P.doneJ.data || []).find(e => e.day === week.start) || { data: { done: [] } }).data.done || []
+  const wRow = (P.doneJ.data || []).find(e => e.day === week.start), manualIdx = (wRow && wRow.data.done) || [], offIdx = (wRow && wRow.data.off) || []
   async function toggle(_, d) {
     const i = (new Date(d.date + 'T12:00:00').getDay() + 6) % 7   // case cochée = le jour (même avec deux séances)
-    if (byDate[d.date]) return
-    const row = (P.doneJ.data || []).find(e => e.day === week.start)
-    const next = manualIdx.includes(i) ? manualIdx.filter(x => x !== i) : [...manualIdx, i].sort()
-    try { if (row) await api.journal.update(row.id, { data: { done: next } }); else await api.journal.add({ kind: 'program_done', day: week.start, data: { done: next } }); P.doneJ.reload() } catch (e) { toast(e.message) }
+    const flip = (L, x) => L.includes(x) ? L.filter(y => y !== x) : [...L, x].sort()
+    // Séance enregistrée ce jour-là : décocher = ne pas la compter pour ce jour du plan
+    const data = byDate[d.date] ? { done: manualIdx.filter(x => x !== i), off: flip(offIdx, i) } : { done: flip(manualIdx, i), off: offIdx }
+    try { if (wRow) await api.journal.update(wRow.id, { data: { ...wRow.data, ...data } }); else await api.journal.add({ kind: 'program_done', day: week.start, data }); P.doneJ.reload() } catch (e) { toast(e.message) }
   }
   const coachSession = d => (byDate[d.date] || []).find(x => x.data && x.data.planCoach === d.date + ':' + (d.slot || 1))
   const coachDone = d => !!coachSession(d)
@@ -241,16 +244,18 @@ export function Program() {
     <List>{days.map((d, i) => { const done = d.key === 'coach' ? coachDone(d) : doneOn(d.date), auto = !!byDate[d.date], isToday = d.date === today, pl = plannedOn(d.date); return <div className="row stack" key={d.date + '-' + (d.slot || 1)} style={isToday ? { background: 'var(--accent-soft)' } : null}>
       <div className="row-gap"><b>{d.day}</b><span className="small muted">{frDate(d.date).slice(0, 5)}</span>{isToday && <span className="badge accent">Aujourd’hui</span>}{d.duo && <span className="badge">duo</span>}{d.key === 'coach' && <span className="badge" style={{ background: '#ff9f0a33' }}>coach</span>}{d.added && <span className="badge">ajoutée</span>}<span className="spacer" /><span className="badge">{d.zone}</span><span className="small muted">{d.min} min</span>
         {d.key === 'coach' ? (coachDone(d) ? <button className="badge good" style={{ border: 0, cursor: 'pointer' }} onClick={() => setCoachOpen(d)} title="Voir ou préciser le cours">Fait ✓ ›</button> : d.date <= today && <button className="btn tinted small" onClick={() => markCoach(d)}>C’est fait</button>)
-        : d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là' : 'Cocher quand la séance est faite'}>
-          <input type="checkbox" checked={done} disabled={auto} onChange={() => toggle(i, d)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
+        : d.key !== 'repos' && <label className="row-gap small" style={{ gap: 6, flexShrink: 0 }} title={auto ? 'Séance enregistrée ce jour-là : décochez si elle ne correspond pas à ce jour du plan' : 'Cocher quand la séance est faite'}>
+          <input type="checkbox" checked={done} onChange={() => toggle(i, d)} style={{ width: 22, height: 22, accentColor: 'var(--good, #30d158)' }} aria-label={'Séance de ' + d.day + ' faite'} />Fait</label>}</div>
       <div style={{ fontWeight: 600, textDecoration: done && d.key !== 'repos' ? 'line-through' : 'none', opacity: done && d.key !== 'repos' ? .65 : 1 }}>{d.title}</div>
       <div className="small muted">{d.detail}</div>
       {d.focus && d.focus.length > 0 && ['ateliers', 'compromis', 'rappel'].includes(d.key) && <div className="tiny muted">Ciblé : {d.focus.map(st => STATION[st] ? STATION[st].label : st).join(', ')}{d.duo && an.duo ? ` (dont lacunes de ${an.duo.partner})` : ''}</div>}
       {d.cycle && <div className="small" style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><span className="badge" style={{ background: PHASE_COLOR[d.cycle.phase] + '33', color: 'var(--ink)', flexShrink: 0 }}>J{d.cycle.day} · {PHASE_LABEL[d.cycle.phase]}</span>{d.adapted && <span className="muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</span>}</div>}
       {d.adapted && !d.cycle && <div className="small muted">{d.adapted}{d.was ? ' (prévu : ' + d.was + ')' : ''}</div>}
       {d.painNote && <div className="small" style={{ color: 'var(--warn, #ff9f0a)' }}>⚠ {d.painNote}</div>}
-      {auto && <div className="tiny muted">Validée : {byDate[d.date].map((x, k) => <React.Fragment key={x.id}>{k ? ', ' : ''}<a className="link" href={'#/seance/' + x.id}>{x.name}</a></React.Fragment>)} <span className="faint">(touchez pour voir ou modifier)</span></div>}
-      {!done && d.date >= today && <div className="row-gap" style={{ gap: 6, flexWrap: 'wrap' }}>{actions(d, pl)}
+      {auto && P.off[d.date] && <div className="tiny muted">Non comptée pour ce jour du plan (séance enregistrée : {byDate[d.date].map(x => x.name).join(', ')}). Recochez « Fait » pour la compter.</div>}
+      {auto && !P.off[d.date] && <div className="tiny muted">Validée : {byDate[d.date].map((x, k) => <React.Fragment key={x.id}>{k ? ', ' : ''}<a className="link" href={'#/seance/' + x.id}>{x.name}</a></React.Fragment>)} <span className="faint">(touchez pour voir ou modifier)</span></div>}
+      {!done && d.key !== 'repos' && d.date >= addDays(today, -6) && <div className="row-gap" style={{ gap: 6, flexWrap: 'wrap' }}>{d.date >= today && actions(d, pl)}
+        <button className="btn glass small" disabled={busy} onClick={() => setMoving(d)}><Icon name="cal" size={14} />Changer de jour</button>
         {d.key === 'coach' && <button className="btn glass small" disabled={busy} onClick={() => save(skipCoach(plan, d.date, d.slot, { pace: an.pace, e1rm: ins.e1rm, self: selfMap }), 'Séance du plan proposée à la place du cours')}>Je ne vais pas au cours</button>}
         {d.coachSkipped && <button className="btn glass small" disabled={busy} onClick={() => save(restoreCoach(plan, d.date, d.slot), 'Cours remis au programme')}>Remettre le cours</button>}</div>}
     </div> })}</List>
@@ -300,8 +305,19 @@ export function Program() {
     {(plan.log || []).length > 0 && <><h2 className="sec">Historique du plan</h2><List>{[...plan.log].reverse().slice(0, 6).map((l, i) => <Row key={i} title={l.text} sub={frDate(l.date)} />)}</List></>}
     <p className="foot">Repères généraux de préparation. Adaptez à vos sensations ; en cas de douleur ou de problème de santé, demandez l’avis d’un professionnel.</p>
     {quick && <QuickSheet onClose={() => setQuick(false)} />}
+    {moving && <MoveSheet d={moving} weeks={plan.weeks} today={today} onClose={() => setMoving(null)} onPick={t => { const d0 = moving; setMoving(null); save(moveDay(plan, d0.date, d0.slot, t.date, t.slot), 'Séance déplacée au ' + frDate(t.date).slice(0, 5)) }} />}
     {coachOpen && <CoachSheet d={coachOpen} cur={coachSession(coachOpen)} onClose={() => setCoachOpen(null)} onSave={o => saveCoach(coachOpen, o)} />}
   </Page>
+}
+
+/** Déplacer une séance du plan à un autre jour (échange avec le contenu de ce jour) */
+function MoveSheet({ d, weeks, today, onClose, onPick }) {
+  const w0 = weeks.findIndex(w => w.days.some(x => x.date === d.date))
+  const L = weeks.slice(Math.max(0, w0), w0 + 2).flatMap(w => w.days).filter(x => x.date >= today && !(x.date === d.date && (x.slot || 1) === (d.slot || 1)) && (x.slot || 1) === 1)
+  return <Sheet title="Changer de jour" onClose={onClose}>
+    <p className="small muted" style={{ marginTop: 0 }}>« {d.title} » ({d.day} {frDate(d.date).slice(0, 5)}) passe au jour choisi ; ce qui était prévu ce jour-là prend sa place. Pour un jour de repos, la séance est simplement décalée.</p>
+    <List>{L.map(x => <Row key={x.date} icon={x.key === 'repos' ? 'moon' : 'cal'} color={x.key === 'repos' ? '#8e8e93' : '#5e5ce6'} title={x.day + ' ' + frDate(x.date).slice(0, 5) + (x.date === today ? ' · aujourd’hui' : '')} sub={x.key === 'repos' ? 'Repos' : 'Prévu : ' + x.title + (x.key === 'coach' ? ' (cours fixe)' : '')} onClick={() => onPick(x)} />)}</List>
+  </Sheet>
 }
 
 /** Cours avec coach fait : contenu facultatif (type de séance, durée, effort, note) */

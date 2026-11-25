@@ -32,7 +32,14 @@ export default function SessionPage({ id, tab: tab0 }) {
   const [missing, setMissing] = useState(false)
   useEffect(() => { if (!base) api.sessions.get(id).then(x => x ? setS(x) : setMissing(true)).catch(() => setMissing(true)) }, [id])
   // Suivi en direct : les autres membres voient les temps arriver
-  useEffect(() => api.sessions.subscribe(id, row => setS(cur => (!cur || (row.updated_at || '') > (cur.updated_at || '')) ? { ...cur, ...row } : cur)), [id])
+  // On ignore l'écho de nos propres enregistrements (sinon une validation rapide est écrasée par l'ancienne version) :
+  // pendant une écriture en cours, et quelques secondes après la dernière, seules les données locales comptent.
+  const mine = useRef({ pending: 0, at: 0 })
+  useEffect(() => () => { if (mine.current.rl) { clearTimeout(mine.current.rl); reload(['sessions']) } }, [])
+  useEffect(() => api.sessions.subscribe(id, row => setS(cur => {
+    if (mine.current.pending > 0 || Date.now() - mine.current.at < 4000) { mine.current.late = row; return cur }
+    return (!cur || (row.updated_at || '') > (cur.updated_at || '')) ? { ...cur, ...row } : cur
+  })), [id])
   const [editing, setEditing] = useState(null)
   const team = s && teams.find(t => t.id === s.team_id)
   const plan = useMemo(() => normPlan((s && s.plan) || (team && team.plan)), [team, s && s.plan])
@@ -46,11 +53,19 @@ export default function SessionPage({ id, tab: tab0 }) {
     hist.current.push(s.data); if (hist.current.length > 60) hist.current.shift()
     const next = { ...s, ...extra, data: nd, updated_at: new Date().toISOString() }
     setS(next)
+    mine.current.pending++; mine.current.at = Date.now()
     try { const row = await api.sessions.save({ id: s.id, data: nd, ...extra }); setS(cur => ({ ...cur, updated_at: row.updated_at })) }
     catch (e) { toast('Enregistrement impossible : ' + e.message); logError('save session: ' + e.message) }
+    finally {
+      mine.current.pending--; mine.current.at = Date.now()
+      // Listes (séances, programme, accueil) remises à jour peu après la dernière modification
+      clearTimeout(mine.current.rl); mine.current.rl = setTimeout(() => reload(['sessions']), 1500)
+      // Une modification d'un coéquipier arrivée pendant ce temps : appliquée ensuite si elle est plus récente
+      setTimeout(() => { const L = mine.current.late; if (!L || mine.current.pending > 0 || Date.now() - mine.current.at < 4000) return; mine.current.late = null; setS(cur => (L.updated_at || '') > (cur.updated_at || '') ? { ...cur, ...L } : cur) }, 4200)
+    }
   }
   async function patch(extra) { setS({ ...s, ...extra }); await api.sessions.save({ id: s.id, ...extra }); reload(['sessions']) }
-  function undo() { const prev = hist.current.pop(); if (prev) { setS({ ...s, data: prev }); api.sessions.save({ id: s.id, data: prev }) } }
+  function undo() { const prev = hist.current.pop(); if (prev) { mine.current.at = Date.now(); setS({ ...s, data: prev }); api.sessions.save({ id: s.id, data: prev }) } }
   const ctx = { s, d, plan, team, duo, who, commit, patch, undo, canUndo: hist.current.length > 0, keeperOnly }
   const custom = isCustom(s)
   // Séance terminée : on ouvre l'analyse plutôt que le chrono
@@ -74,6 +89,7 @@ export default function SessionPage({ id, tab: tab0 }) {
     {tab === 'temps' && (custom ? <CustomResults {...ctx} /> : <Times {...ctx} />)}
     {tab === 'cardio' && <Cardio {...ctx} />}
     {tab === 'stats' && (custom ? <CustomStats {...ctx} /> : <Stats {...ctx} />)}
+    {tab === 'stats' && !isQuick(s) && <a className="btn glass block" style={{ marginTop: 14 }} href={'#/comparer?a=' + s.id}><Icon name="compare" size={18} />Comparer avec une autre séance</a>}
     {tab === 'coach' && <Coach {...ctx} />}
   </Page>
 }
@@ -565,6 +581,7 @@ function InfoSheet({ s, onClose }) {
       <Field label="Date"><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
       {!isCustom(s) && <Field label="Type"><select value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>}
     </List>
-    <p className="foot">Les temps, objectifs et valeurs réalisées se corrigent dans l’onglet « {isCustom(s) ? 'Réalisé' : 'Temps'} » de la séance.</p>
+    <a className="btn glass block" style={{ marginTop: 12 }} href={'#/seance/' + s.id + '/temps'} onClick={() => onClose(false)}>{isCustom(s) ? 'Corriger les exercices réalisés' : 'Corriger les temps'}</a>
+    <p className="foot">Exercices, temps, distances, répétitions et charges se corrigent dans l’onglet « {isCustom(s) ? 'Réalisé' : 'Temps'} » : touchez une ligne.</p>
   </Sheet>
 }

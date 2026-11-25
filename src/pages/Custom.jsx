@@ -272,7 +272,12 @@ function useNow(on) { const [n, setN] = useState(Date.now()); useEffect(() => { 
 function DoneForm({ st, onSave, compact, withTime }) {
   const t = st.target || {}, d0 = st.done || {}
   const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: d0.rpe ?? 7, time: (d0.time ?? doneOf(st).time) != null ? fmt(d0.time ?? doneOf(st).time) : '' })
-  const keys = st.ex === 'amrap' ? ['rounds', 'reps'] : ['meters', 'cal', 'reps', 'load'].filter(k => t[k] != null || d0[k] != null)
+  // Champs : ceux de l'objectif, ceux déjà saisis, ceux de l'exercice, et ceux ajoutés à la main (+ Charge…)
+  const [extra, setExtra] = useState([])
+  const def = defaultTarget(st.ex) || {}
+  const ALL = ['meters', 'cal', 'reps', 'load']
+  const keys = st.ex === 'amrap' ? ['rounds', 'reps'] : ALL.filter(k => t[k] != null || d0[k] != null || def[k] != null || extra.includes(k))
+  const addable = st.ex === 'amrap' ? [] : ALL.filter(k => !keys.includes(k))
   // Allure en direct (course : min/km ; rameur, SkiErg, vélo : /500 m)
   const tSec = withTime ? parseT(v.time) : d0.time, m = parseNum(v.meters)
   const pace = tSec > 0 && m > 0 ? (st.ex === 'run' || (EX[st.ex] || {}).cat === 'run' ? fmt(tSec / (m / 1000)) + ' /km' : ['ski', 'row', 'bike'].includes(st.ex) ? fmt(tSec / (m / 500)) + ' /500 m' : null) : null
@@ -280,6 +285,7 @@ function DoneForm({ st, onSave, compact, withTime }) {
   return <div>
     {withTime && <label className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>Temps réalisé (min:s)<input style={inp} {...TIME} value={v.time} onChange={e => setV({ ...v, time: maskT(e.target.value) })} /></label>}
     {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{st.ex === 'amrap' && k === 'reps' ? 'Reps en plus' : METRICS[k][0] + unit(k) + ' réalisé(e)'}<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
+    {addable.length > 0 && <div className="row-gap" style={{ marginTop: 6 }}>{addable.map(k => <button key={k} type="button" className="btn plain small" style={{ padding: '2px 6px' }} onClick={() => setExtra([...extra, k])}>+ {METRICS[k][0]}</button>)}</div>}
     {pace && <div className="small" style={{ marginTop: 6 }}>Allure : <b className="num">{pace}</b>{t.time && t.meters ? <span className="muted"> · visée {fmt(t.time / (t.meters / (st.ex === 'run' ? 1000 : 500)))}</span> : ''}</div>}
     <div className="row-gap small" style={{ marginTop: 6 }}><span>Effort ressenti</span><input type="range" min="1" max="10" value={v.rpe} onChange={e => setV({ ...v, rpe: +e.target.value })} style={{ flex: 1 }} aria-label="Effort ressenti" /><b className="num">{v.rpe}/10</b></div>
     <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(withTime ? { time: tSec > 0 ? tSec : null } : d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds), rpe: v.rpe })}>Valider</button>
@@ -351,6 +357,14 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
   const [open, setOpen] = useState(null)
   const sum = customSummary(s)
   const setDone = (i, v) => { const x = JSON.parse(JSON.stringify(d)); x.steps[i].done = v; commit(x) }
+  const [adding, setAdding] = useState(false)
+  const setEx = (i, ex, nm) => { const x = JSON.parse(JSON.stringify(d)); x.steps[i].ex = ex; x.steps[i].name = nm || ''; commit(x) }
+  const delStep = i => { if (!confirm('Retirer cet exercice de la séance ?')) return; const x = JSON.parse(JSON.stringify(d)); x.steps.splice(i, 1); commit(x); setOpen(null) }
+  const addStep = (ex, nm) => {
+    const x = JSON.parse(JSON.stringify(d)), g = Math.max(-1, ...x.steps.map(z => z.g ?? -1)) + 1
+    x.steps.push({ s: null, e: null, done: null, rest: 0, w: 'A', note: '', name: nm || '', g, set: 1, of: 1, ex, target: {}, tempo: '' })
+    commit(x); setAdding(false); setOpen(x.steps.length - 1)
+  }
   async function del() { if (!confirm('Supprimer définitivement cette séance ?')) return; await api.sessions.remove(s.id); await reload(['sessions']); location.hash = '#/seances' }
   return <>
     <div className="stats"><Stat k="Étapes réalisées" v={`${sum.done}/${sum.n}`} /><Stat k="Objectifs atteints" v={pct(sum.achievement)} tone={sum.achievement >= 1 ? 'good' : 'bad'} /><Stat k="Temps de travail" v={fmt(sum.work)} d={sum.rest ? 'récup ' + fmt(sum.rest) : ''} /></div>
@@ -358,10 +372,14 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
       <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
-        <DoneForm st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
+        <div className="row-gap" style={{ marginBottom: 8, flexWrap: 'nowrap' }}><span className="tiny muted">Exercice</span><ExSelect value={x.ex} name={x.name} onChange={(ex, nm) => setEx(i, ex, nm)} />
+          <button type="button" className="icon-btn" style={{ width: 34, height: 34, color: 'var(--bad)' }} aria-label="Retirer cet exercice" onClick={() => delStep(i)}><Icon name="trash" size={17} /></button></div>
+        <DoneForm key={x.ex} st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>
-    <p className="foot">Touchez une étape pour saisir ou corriger le réalisé (utile pour une séance faite sans le chrono).</p>
+    <button className="btn glass block" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><Icon name="plus" size={16} /> Ajouter un exercice réalisé</button>
+    {adding && createPortal(<ExSheet value={null} onClose={() => setAdding(false)} onPick={addStep} />, document.body)}
+    <p className="foot">Touchez un exercice pour corriger ce qui a été fait : changer l’exercice, le temps, la distance, les répétitions, la charge (bouton « + Charge » s’il manque), ou le retirer.</p>
     <List><div className="row stack"><span className="small muted">Note</span><textarea defaultValue={d.note || ''} onBlur={e => commit({ ...d, note: e.target.value })} /></div></List>
     {!keeperOnly && <button className="btn plain block" style={{ color: 'var(--bad)', marginTop: 10 }} onClick={del}>Supprimer la séance</button>}
   </>

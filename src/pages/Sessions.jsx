@@ -1,15 +1,15 @@
 import React, { useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api } from '../lib/api.js'
-import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast, Chips, TIME, parseNum } from '../ui.jsx'
+import { Page, Sec, List, Row, Field, Seg, Empty, Icon, Sheet, useToast, Chips, TIME, parseNum, useLoad } from '../ui.jsx'
 import { DeltaBars } from '../charts.jsx'
 import { SEGS, STATIONS, fmt, fd, frDate, todayISO, tone, normPlan, parseT } from '../lib/hyrox.js'
 import { emptyData, normData, split, pastData } from '../lib/session.js'
 import { summary } from '../lib/analyze.js'
-import { isCustom, customSummary, exLabel, isPlanned, isQuick } from '../lib/custom.js'
+import { isCustom, customSummary, exLabel, isPlanned, isQuick, doneOf } from '../lib/custom.js'
 import { QuickSheet } from './Activity.jsx'
 import { TrainSheet } from './Train.jsx'
-import { activeTeams, KIND, plansOf, knownUsers, isKeeperOnly, athleteNames } from './common.js'
+import { activeTeams, KIND, plansOf, knownUsers, isKeeperOnly, athleteNames, isAthlete } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 
 const tomorrow = () => { const d = new Date(Date.now() + 864e5); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10) }
@@ -36,8 +36,8 @@ export function Sessions() {
       sub={`${frDate(s.session_date)} · ${KIND[s.kind]}${s.team_id ? ' · duo' : ' · solo'}${sum.complete ? '' : ` · ${done}/${SEGS.length}`}${!k && s.timekeeper && s.timekeeper !== profile.id ? ' · pointée par ' + ((s.names && s.names.keeper) || 'un tiers') : ''}`}
       value={sum.all.n ? fmt(sum.all.t) : ''} href={'#/seance/' + s.id + (k ? '/chrono' : '')} />
   }
-  return <Page title="Séances" actions={<><a className="icon-btn glass" href="#/comparer" aria-label="Comparer"><Icon name="compare" /></a><button className="icon-btn glass" onClick={() => setTrain(true)} aria-label="Nouvelle séance"><Icon name="plus" /></button></>}>
-    <button className="btn block" style={{ marginBottom: 10 }} onClick={() => setTrain(true)}><Icon name="plus" size={18} />Nouvelle séance ou activité</button>
+  return <Page title="Séances" actions={<><button className="icon-btn glass" onClick={() => setTrain(true)} aria-label="Nouvelle séance"><Icon name="plus" /></button></>}>
+    <div className="row-gap" style={{ marginBottom: 10, flexWrap: 'nowrap' }}><button className="btn" style={{ flex: 1 }} onClick={() => setTrain(true)}><Icon name="plus" size={18} />Nouvelle séance</button><a className="btn glass" href="#/comparer"><Icon name="compare" size={18} />Comparer</a></div>
     {planned.length > 0 && <Sec title="Prévues"><List>{planned.map(s => <Row key={s.id} icon="cal" color="#5e5ce6" title={s.name} sub={`${s.session_date === todayISO() ? 'Aujourd’hui' : frDate(s.session_date)} · ${[...new Set(customSummary(s).steps.map(exLabel))].slice(0, 3).join(', ')}`} value={s.session_date === todayISO() ? 'Lancer' : ''} href={'#/seance/' + s.id + '/chrono'} />)}</List></Sec>}
     {keep.length > 0 && <Sec title="Séances que je pointe"><List>{keep.map(s => row(s, true))}</List></Sec>}
     {opts.length > 2 && <Chips value={team} onChange={setTeam} label="Filtrer" options={opts} />}
@@ -66,11 +66,15 @@ export function ClaimSheet({ onClose }) {
 
 /** Choix de la personne qui enregistre les temps */
 export function KeeperPicker({ value, onChange, exclude = [] }) {
-  const { teams, profile } = useApp()
-  const people = knownUsers(teams, profile.id).filter(p => !exclude.includes(p.id))
+  const { teams, profile, sessions } = useApp()
+  const team = knownUsers(teams, profile.id)
+  // Pointeurs déjà venus (code saisi une fois) : on les retrouve ici, plus besoin de code
+  const pastIds = [...new Set(sessions.filter(s => s.timekeeper && s.timekeeper !== profile.id && (s.owner === profile.id || isAthlete(s, profile.id))).map(s => s.timekeeper))].filter(id => !team.some(p => p.id === id))
+  const past = useLoad(() => api.profiles.many(pastIds), [pastIds.join()])
+  const people = [...team.map(p => ({ ...p, why: 'Membre de l’un de vos duos (actuel ou ancien)' })), ...((past.data || []).map(p => ({ ...p, why: 'A déjà pointé vos temps : plus besoin de code' })))].filter(p => !exclude.includes(p.id))
   return <List>
     <Row title="Moi / les athlètes" sub="Vous pointez vous-même, ou votre partenaire de duo" chev={false} onClick={() => onChange(null)} value={value == null ? '✓' : ''} />
-    {people.map(p => <Row key={p.id} icon="user" color="#30d158" title={p.display_name} sub="Membre de l’un de vos duos (actuel ou ancien)" chev={false} onClick={() => onChange(p.id)} value={value === p.id ? '✓' : ''} />)}
+    {people.map(p => <Row key={p.id} icon="user" color="#30d158" title={p.display_name} sub={p.why} chev={false} onClick={() => onChange(p.id)} value={value === p.id ? '✓' : ''} />)}
     <div className="row"><span className="label"><span className="t">Quelqu’un d’autre</span><span className="s">Après la création, donnez-lui le code de pointage affiché sur l’écran Chrono : il le saisit dans Séances › Pointer un athlète.</span></span></div>
   </List>
 }
@@ -164,30 +168,67 @@ function PastTimes({ P, setP }) {
   </>
 }
 
+/** Résumé par exercice d'une séance perso : temps, distance, répétitions, charge max */
+function exStats(s) {
+  const m = new Map()
+  ;(s.data.steps || []).forEach(x => {
+    const d = doneOf(x); if (![d.time, d.meters, d.reps, d.load, d.cal].some(v => v != null)) return
+    const k = exLabel(x), o = m.get(k) || { time: 0, meters: 0, reps: 0, cal: 0, load: null, n: 0 }
+    o.time += d.time || 0; o.meters += d.meters || 0; o.reps += d.reps || 0; o.cal += d.cal || 0; o.n++
+    if (d.load != null) o.load = Math.max(o.load || 0, d.load)
+    m.set(k, o)
+  })
+  return m
+}
+const exTxt = o => !o ? '—' : [o.meters ? (o.meters >= 1000 ? (o.meters / 1000).toFixed(2).replace('.', ',') + ' km' : Math.round(o.meters) + ' m') : '', o.reps ? o.reps + ' reps' : '', o.load ? o.load + ' kg' : '', o.cal ? o.cal + ' kcal' : '', o.time ? fmt(o.time) : ''].filter(Boolean).join(' · ') || '—'
+
 export function Compare() {
   const { sessions, teams } = useApp()
   const plans = plansOf(teams)
-  const done = sessions.filter(s => !isCustom(s) && normData(s.data).cp.some(v => v != null))
-  const [a, setA] = useState(done[1] ? done[1].id : ''), [b, setB] = useState(done[0] ? done[0].id : '')
+  const q = qs(), pre = q.get('a') && sessions.find(s => s.id === q.get('a'))
+  const [mode, setMode] = useState(pre && isCustom(pre) ? 'perso' : 'hyrox')
+  const hy = sessions.filter(s => !isCustom(s) && !isQuick(s) && normData(s.data).cp.some(v => v != null))
+  const cu = sessions.filter(s => isCustom(s) && !isPlanned(s) && !isQuick(s) && customSummary(s).done > 0)
+  const done = mode === 'hyrox' ? hy : cu
+  const [sel, setSel] = useState({})
+  const defA = pre && done.includes(pre) ? pre.id : (done[1] || done[0] || {}).id || ''
+  const a = sel[mode + 'a'] ?? defA, b = sel[mode + 'b'] ?? ((done.find(s => s.id !== a) || {}).id || '')
+  const setA = v => setSel({ ...sel, [mode + 'a']: v }), setB = v => setSel({ ...sel, [mode + 'b']: v })
   const A = done.find(s => s.id === a), B = done.find(s => s.id === b)
   const rows = useMemo(() => {
-    if (!A || !B) return []
+    if (!A || !B || mode !== 'hyrox') return []
     const da = normData(A.data), db = normData(B.data)
     return SEGS.map((g, i) => ({ g, ta: split(da, i), tb: split(db, i) }))
-  }, [A, B])
-  const sa = A && summary(A, plans[A.team_id]), sb = B && summary(B, plans[B.team_id])
-  return <Page back="#/seances" title="Comparer">
+  }, [A, B, mode])
+  const sa = mode === 'hyrox' && A && summary(A, plans[A.team_id]), sb = mode === 'hyrox' && B && summary(B, plans[B.team_id])
+  const ea = mode === 'perso' && A ? exStats(A) : null, eb = mode === 'perso' && B ? exStats(B) : null
+  const exs = ea && eb ? [...new Set([...ea.keys(), ...eb.keys()])] : []
+  const opt = s => <option key={s.id} value={s.id}>{frDate(s.session_date)} · {s.name}</option>
+  return <Page back="#/seances" title="Comparer" subtitle="Deux séances côte à côte">
+    <Seg value={mode} onChange={setMode} options={[['hyrox', 'Hyrox / simulations'], ['perso', 'Séances perso']]} />
+    {done.length < 2 ? <div className="glass card"><Empty icon="compare">Il faut au moins deux {mode === 'hyrox' ? 'séances Hyrox avec des temps' : 'séances perso réalisées'} pour comparer.</Empty></div> : <>
     <List>
-      <Field label="Séance 1"><select style={{ width: '72%', direction: 'ltr' }} value={a} onChange={e => setA(e.target.value)}>{done.map(s => <option key={s.id} value={s.id}>{frDate(s.session_date)} · {s.name}</option>)}</select></Field>
-      <Field label="Séance 2"><select style={{ width: '72%', direction: 'ltr' }} value={b} onChange={e => setB(e.target.value)}>{done.map(s => <option key={s.id} value={s.id}>{frDate(s.session_date)} · {s.name}</option>)}</select></Field>
+      <Field label="Séance 1"><select style={{ width: '72%', direction: 'ltr' }} value={a} onChange={e => setA(e.target.value)}>{done.map(opt)}</select></Field>
+      <Field label="Séance 2"><select style={{ width: '72%', direction: 'ltr' }} value={b} onChange={e => setB(e.target.value)}>{done.map(opt)}</select></Field>
     </List>
-    {A && B && <>
+    {mode === 'hyrox' && A && B && <>
       <h2 className="sec">Écart (séance 2 − séance 1)</h2>
       <div className="glass card"><DeltaBars rows={sa.stations.map((x, i) => ({ label: x.label, d: x.t != null && sb.stations[i].t != null ? sb.stations[i].t - x.t : null }))} /></div>
       <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Segment</th><th className="r">1</th><th className="r">2</th><th className="r">Écart</th></tr></thead><tbody>
         {rows.map(({ g, ta, tb }) => <tr key={g.id} className={g.type}><td>{g.label}</td><td className="r num">{fmt(ta)}</td><td className="r num">{fmt(tb)}</td><td className={'r num ' + tone(ta != null && tb != null ? tb - ta : null)}>{ta != null && tb != null ? fd(tb - ta) : '—'}</td></tr>)}
         <tr className="st"><td>Total</td><td className="r num">{fmt(sa.all.t)}</td><td className="r num">{fmt(sb.all.t)}</td><td className={'r num ' + tone(sb.all.t - sa.all.t)}>{fd(sb.all.t - sa.all.t)}</td></tr>
       </tbody></table></div>
+    </>}
+    {mode === 'perso' && A && B && <>
+      <div className="stats">{[A, B].map((s, k) => { const c = customSummary(s); return <div className="stat glass" key={k}><div className="k">Séance {k + 1}</div><div className="v num">{fmt(c.work)}</div><div className="d">{c.done}/{c.n} étapes · {c.achievement != null ? Math.round(c.achievement * 100) + ' % des objectifs' : 'sans objectif'}</div></div> })}</div>
+      <h2 className="sec">Par exercice</h2>
+      <List>{exs.map(k => { const x = ea.get(k), y = eb.get(k), dl = x && y && x.load && y.load ? y.load - x.load : null, dt = x && y && x.time && y.time && x.meters === y.meters && x.reps === y.reps ? y.time - x.time : null
+        return <div className="row stack" key={k}><b>{k}</b>
+          <div className="small" style={{ display: 'grid', gridTemplateColumns: '20px 1fr', gap: '2px 6px' }}><span className="muted">1</span><span className="num">{exTxt(x)}</span><span className="muted">2</span><span className="num">{exTxt(y)}</span></div>
+          {(dl || dt) ? <span className="small">{dl ? <span className={dl > 0 ? 'good' : 'bad'}>{dl > 0 ? '+' : ''}{dl} kg </span> : ''}{dt ? <span className={tone(dt)}>{fd(dt)} sur le même volume</span> : ''}</span> : null}
+        </div> })}</List>
+      <p className="foot">Charge : la plus lourde de l’exercice. Temps, distance et répétitions : cumul des séries.</p>
+    </>}
     </>}
   </Page>
 }
