@@ -6,7 +6,7 @@ import { api } from '../lib/api.js'
 import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoad, parseNum, TIME, maskT, go, Chips } from '../ui.jsx'
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
-import { fmt, fd, parseT, frDate, todayISO, tone } from '../lib/hyrox.js'
+import { fmt, fd, parseT, frDate, todayISO, tone, STATION, normPlan, planRelays } from '../lib/hyrox.js'
 import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel } from '../lib/custom.js'
 import { LIBRARY, LIB_CATS, LIB } from '../lib/library.js'
 import { activeZones, hits, altFor, adaptBlocks, ZONE } from '../lib/pain.js'
@@ -303,6 +303,9 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
   const st = cur >= 0 ? steps[cur] : null, prev = cur > 0 ? steps[cur - 1] : cur < 0 ? steps[steps.length - 1] : null
   const restLeft = st && st.s == null && prev && prev.e != null ? (prev.window ? prev.window - (t - prev.s) / 1000 : prev.rest ? prev.rest - (t - prev.e) / 1000 : null) : null
   const nm = w => w === 'AB' ? 'Les deux' : who(w)
+  // Atelier Hyrox en duo : rappel des relais prévus dans le plan de course de l'équipe
+  const { teams } = useApp(), team = s.team_id ? teams.find(x => x.id === s.team_id) : null
+  const relaysOf = ex => team && STATION[ex] ? planRelays(normPlan(team.plan), ex) : []
   // Enchaînement automatique (Tabata, intervalles, EMOM, AMRAP) : fin d'effort et départ après la récupération
   const lock = useRef(null)
   useEffect(() => {
@@ -328,6 +331,7 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
         {st.grp && <div className="badge accent" style={{ marginBottom: 4 }}>{st.grp.label}{st.auto || st.autoStart ? ' · enchaînement automatique' : ''}</div>}
         <div className="cur">{stepLabel(st)}</div>
         <div className="cur-sub">Objectif : {st.hold && st.target.time ? (st.ex === 'amrap' ? 'max de tours en ' + fmt(st.target.time) + (st.target.rounds ? ' (visez ' + st.target.rounds + ')' : '') : fmtTarget({ ...st.target, time: null }).replace('—', 'effort') + ' en ' + fmt(st.target.time)) : fmtTarget(st.target)}{st.tempo ? ' · tempo ' + st.tempo : ''}{hasB(s) ? ' · ' + nm(st.w) : ''}{st.note ? ' · ' + st.note : ''}</div>
+        {relaysOf(st.ex).length > 1 && <div className="small center" style={{ margin: '4px 0' }}>Relais prévus : {relaysOf(st.ex).map((r, k) => <span key={k}>{k ? ' · ' : ''}<b>{who(r.w)}</b> {r.label}</span>)}</div>}
         {steps[cur + 1] && <div className="tiny muted center">Ensuite : {stepLabel(steps[cur + 1])}</div>}
         {st.s == null ? <>
           {restLeft != null && <div className={'center num ' + (restLeft > 0 ? '' : 'good')} style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>{restLeft > 0 ? 'Récup ' + fmt(restLeft) : 'C’est reparti !'}</div>}
