@@ -169,3 +169,21 @@ test('ressenti par athlète : chacun le sien, sans écraser l’autre', async ()
   const s = { athletes: { A: 'p', B: 'm' }, data: { format: 'custom', steps: [{ ex: 'ski', done: d }] } }
   assert.equal(sessionRPE(s, 'p'), 8); assert.equal(sessionRPE(s, 'm'), 6)
 })
+
+test('ressenti vs effort estimé : coup de mou, tendance de fond, cycle', async () => {
+  const { readEffort, estFromHR } = await import('../src/lib/effort.js')
+  assert.ok(estFromHR(170, 190, 60) > 7.5); assert.ok(estFromHR(120, 190, 60) < 5)
+  const P = (date, gap, kind = 'cardio') => ({ id: date, date, kind, felt: 6 + gap, est: 6, gap })
+  const old = ['2026-09-20', '2026-09-27', '2026-10-04', '2026-10-11', '2026-10-18'].map(d => P(d, 0))
+  // coup de mou : séances récentes normales, celle-ci +2
+  const calm = [...old, P('2026-11-10', 0), P('2026-11-17', 0.2)]
+  assert.equal(readEffort(P('2026-11-24', 2), { history: calm }).level, 'dip')
+  // tendance : les 3 dernières semaines déjà plus dures
+  const tired = [...old, P('2026-11-10', 1.5), P('2026-11-17', 1.5)]
+  assert.equal(readEffort(P('2026-11-24', 2), { history: tired }).level, 'trend')
+  assert.equal(readEffort(P('2026-11-24', -2), { history: calm }).level, 'easy')
+  // cycle : la phase est citée
+  const cyc = [{ day: '2026-11-22', data: { start: true } }]
+  const R = readEffort(P('2026-11-24', 2), { history: calm, cycle: cyc })
+  assert.ok(!R.why.length || /cycle/.test(R.why[0]))
+})

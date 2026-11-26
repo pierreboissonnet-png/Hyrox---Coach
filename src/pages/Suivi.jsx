@@ -8,6 +8,7 @@ import { fmt, frDate } from '../lib/hyrox.js'
 import { addDays } from '../lib/plan.js'
 import { EX } from '../lib/custom.js'
 import { usePlanData } from './Plan.jsx'
+import { EffortWeeks } from './Effort.jsx'
 import { weekly, skipped, gapWork, progressExercises, progressPoints } from '../lib/suivi.js'
 
 const exName = id => (EX[id] || {}).label || id
@@ -104,6 +105,7 @@ export function SuiviPage() {
             <LineChart height={96} series={[{ color: c, width: 2, dots: true, pts: W.map((w, i) => [i, f(w)]) }]} xFmt={xl} yFmt={fm} />
           </div>)}
       </div> : <div className="glass card small muted">Saisissez votre forme du jour (Moi › Forme du jour) ou synchronisez votre montre pour voir ces courbes.</div>}
+      <EffortWeeks weeks={W} />
     </Sec>}
   </Page>
 }

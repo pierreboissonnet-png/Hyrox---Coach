@@ -18,6 +18,7 @@ import { readHRFile, series, zonesOf, ZONE_NAMES, seriesFromSamples } from '../l
 import { KIND, plansOf, profileOf, nameOf, isKeeperOnly, isAthlete, athleteNames } from './common.js'
 import { KeeperPicker } from './Sessions.jsx'
 import { HRZoom } from './HRZoom.jsx'
+import { EffortCard } from './Effort.jsx'
 import { logError } from '../lib/bugs.js'
 
 const TABS = [['chrono', 'Chrono'], ['temps', 'Temps'], ['cardio', 'Cardio'], ['stats', 'Stats'], ['coach', 'Coach']]
@@ -508,6 +509,7 @@ function Stats({ s, d, plan, duo, who }) {
       <Stat k="Rox" v={fmt(sum.rox.t)} d={fd(sum.rox.d)} tone={tone(sum.rox.d)} />
     </div>
     <CycleCard s={s} sum={sum} />
+    <EffortCard s={s} />
     {tips.length > 0 && <div className="glass card">{tips.map((t, i) => <div className="tip" key={i}><span className={'dot ' + t.tone} /><span className="small">{t.text}</span></div>)}</div>}
     <h2 className="sec">Ateliers vs objectif</h2>
     <div className="glass card"><DeltaBars rows={sum.stations.map(x => ({ label: x.label, d: x.d }))} /></div>

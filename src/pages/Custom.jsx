@@ -16,6 +16,7 @@ import { activeTeams, KIND } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 import { KeeperPicker } from './Sessions.jsx'
 import { HRZoom } from './HRZoom.jsx'
+import { EffortCard } from './Effort.jsx'
 
 const inp = { background: 'var(--fill)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(120,120,128,.35)', minWidth: 0, width: '100%', textAlign: 'left', fontSize: 16, color: 'var(--ink)', boxSizing: 'border-box' }
 const pct = a => a == null ? '—' : Math.round(a * 100) + ' %'
@@ -532,6 +533,7 @@ export function CustomStats({ s, who }) {
               <td className="r small">{r.q != null ? r.q + uTxt(r.u || relayUnit(x)) : '—'}</td><td className="r num">{r.s != null && r.e != null ? (r.est ? '≈' : '') + fmt((r.e - r.s) / 1000) : '—'}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
           </tbody></table></div> })())}
     </>}
+    <EffortCard s={s} />
     <h2 className="sec">Objectifs proposés pour la prochaine fois</h2>
     <List>{prog.map((p, i) => <div className="row stack" key={i}><div className="row-gap"><b>{p.label}</b><span className="spacer" /><span className={'badge ' + (p.achievement >= 1 ? 'good' : p.achievement < 0.9 ? 'bad' : '')}>{pct(p.achievement)}</span></div>
       <span className="small">{fmtTarget(p.target)} → <b>{fmtTarget(p.next)}</b></span><span className="small muted">{p.why}{p.e1rm ? ` · 1RM estimé ${Math.round(p.e1rm)} kg` : ''}{p.hmax ? ` · FC max ${p.hmax}` : ''}</span></div>)}</List>
