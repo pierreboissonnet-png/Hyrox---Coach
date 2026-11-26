@@ -329,3 +329,12 @@ export function withRpe(o, slot, v) {
   const vals = Object.values(by).filter(x => x != null)
   return { ...(o || {}), rpeBy: by, rpe: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10 }
 }
+/** Part d'un athlète sur une étape faite en relais : en quantité si saisie (m, reps, kcal), sinon en temps */
+export function shareOf(x, slot) {
+  const R = (x.relays || []).filter(r => r.w === 'A' || r.w === 'B'); if (!R.length) return null
+  const byQ = R.some(r => +r.q > 0 && r.u && r.u !== 's')
+  const val = r => byQ ? (+r.q > 0 ? +r.q : 0) : (r.s != null && r.e != null ? (r.e - r.s) / 1000 : 0)
+  const tot = R.reduce((a, r) => a + val(r), 0), mine = R.filter(r => r.w === slot).reduce((a, r) => a + val(r), 0)
+  const t = R.filter(r => r.w === slot && r.s != null && r.e != null).reduce((a, r) => a + (r.e - r.s) / 1000, 0)
+  return tot > 0 ? { pct: mine / tot, amt: byQ ? mine : null, u: byQ ? (R.find(r => r.u) || {}).u : 's', t, n: R.filter(r => r.w === slot).length } : null
+}

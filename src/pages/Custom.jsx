@@ -7,7 +7,7 @@ import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoa
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone, STATION, normPlan, planRelays } from '../lib/hyrox.js'
-import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel, relayUnit, stepTotal, genRelays, timeRelays, rpeOf, withRpe } from '../lib/custom.js'
+import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel, relayUnit, stepTotal, genRelays, timeRelays, rpeOf, withRpe, shareOf } from '../lib/custom.js'
 import { LIBRARY, LIB_CATS, LIB } from '../lib/library.js'
 import { activeZones, hits, altFor, adaptBlocks, ZONE } from '../lib/pain.js'
 import { StretchSuggest } from './Body.jsx'
@@ -500,6 +500,10 @@ export function CustomStats({ s, who }) {
   const S = get(meSlot) ? series(get(meSlot)) : null
   const end = customEnd(d) / 1000
   const all = S ? hrStat(S, 0, end) : null
+  // Séance à deux avec relais : ma part de chaque exercice et ma FC pendant mes relais
+  const relDuo = hasB(s) && steps.some(x => x.relays && x.relays.length)
+  const relHR = (x, w) => { const L = (x.relays || []).filter(r => r.w === w && r.s != null && r.e != null).map(r => hrStat(S, r.s / 1000, r.e / 1000)).filter(Boolean); if (!L.length) return null; return { avg: L.reduce((a, h) => a + h.avg, 0) / L.length, max: Math.max(...L.map(h => h.max)) } }
+  const myShare = relDuo ? (() => { const L = steps.map(x => shareOf(x, meSlot)).filter(Boolean); return L.length ? L.reduce((a, z) => a + z.pct, 0) / L.length : null })() : null
   const kcal = all ? kcalFromHR(all.avg, end / 60, prof(meSlot)) : d.avgHR ? kcalFromHR(d.avgHR, end / 60, prof(meSlot)) : kcalFromMET(steps.filter(x => x.w === meSlot || x.w === 'AB'), prof(meSlot))
   const z = [0, 0, 0, 0, 0]; let n = 0
   if (S) for (let t = 0; t <= end; t++) { const v = hrAt(S, t); if (v != null) { z[zoneOf(zones, v) - 1]++; n++ } }
@@ -510,6 +514,7 @@ export function CustomStats({ s, who }) {
     <div className="stats">
       <Stat k="Objectifs atteints" v={pct(sum.achievement)} d={`${sum.done}/${sum.n} étapes`} tone={sum.achievement >= 1 ? 'good' : sum.achievement < 0.9 ? 'bad' : 'even'} />
       <Stat k="Durée" v={fmt(sum.total)} d={'travail ' + fmt(sum.work)} />
+      {myShare != null && <Stat k="Ma part du travail" v={Math.round(myShare * 100) + ' %'} d={'moyenne des exercices en relais'} />}
       <Stat k="Dépense estimée" v={kcal ? kcal + ' kcal' : '—'} d={all ? 'd’après la FC' : 'estimation sans cardio'} />
       <Stat k={all ? 'FC moyenne / max' : 'FC moyenne'} v={all ? Math.round(all.avg) + ' / ' + all.max : d.avgHR ? d.avgHR + ' bpm' : '—'} d={all ? '' : d.avgHR ? 'saisie à la main' : 'importez le cardio (onglet Cardio)'} />
     </div>
@@ -517,9 +522,12 @@ export function CustomStats({ s, who }) {
       {zoom && <HRZoom ser={slots.map(w => { const R = series(get(w)); return R && { color: COLORS[w], name: who(w), pts: R.t.map((x, k) => [x, R.b[k]]) } }).filter(Boolean)} bands={bands} labelAt={t => stepAt(s, t, who)} onClose={() => setZoom(false)} />}<div className="legend">{slots.map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)}</span>)}<span>bandes = exercices</span></div>
       {n > 0 && <div className="zones" style={{ marginTop: 8 }}>{z.map((v, i) => <i key={i} className={'z' + (i + 1)} style={{ width: (v / n * 100) + '%' }} />)}</div>}</div>}
     <h2 className="sec">Exercice par exercice</h2>
-    <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Étape</th><th className="r">Objectif</th><th className="r">Réalisé</th><th className="r">%</th><th className="r">FC moy/max</th></tr></thead><tbody>
-      {steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), h = by[i]; return <tr key={i}><td>{stepLabel(x)}</td><td className="r small">{fmtTarget(x.target)}</td><td className="r small">{fmtTarget(dn)}</td>
-        <td className={'r num ' + (a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even')}>{pct(a)}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
+    {relDuo && <p className="foot" style={{ marginTop: -4 }}>« Ma part » : ce que {who(meSlot)} a fait de l’exercice (en mètres, reps ou kcal si les relais ont des quantités, sinon en temps). FC : pendant mes relais.</p>}
+    <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Étape</th>{!relDuo && <th className="r">Objectif</th>}<th className="r">Réalisé</th><th className="r">{relDuo ? 'Ma part' : '% objectif'}</th><th className="r">{relDuo ? 'Ma FC moy/max' : 'FC moy/max'}</th></tr></thead><tbody>
+      {steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), sh = relDuo ? shareOf(x, meSlot) : null, h = sh && S ? relHR(x, meSlot) : by[i]; return <tr key={i}><td>{stepLabel(x)}</td>{!relDuo && <td className="r small">{fmtTarget(x.target)}</td>}<td className="r small">{fmtTarget(dn)}</td>
+        {relDuo ? <td className="r num small">{sh ? <><b>{Math.round(sh.pct * 100)} %</b>{sh.amt != null ? ' · ' + Math.round(sh.amt * 10) / 10 + (sh.u === 'm' ? ' m' : ' ' + sh.u) : ' · ' + fmt(sh.t)}</> : x.w === meSlot ? '100 %' : x.w === 'AB' ? '—' : '0 %'}</td>
+          : <td className={'r num ' + (a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even')}>{pct(a)}</td>}
+        <td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
     </tbody></table></div>
     {steps.some(x => x.relays && x.relays.length) && <>
       <h2 className="sec">Relais</h2>

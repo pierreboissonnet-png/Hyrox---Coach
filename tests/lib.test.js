@@ -187,3 +187,11 @@ test('ressenti vs effort estimé : coup de mou, tendance de fond, cycle', async 
   const R = readEffort(P('2026-11-24', 2), { history: calm, cycle: cyc })
   assert.ok(!R.why.length || /cycle/.test(R.why[0]))
 })
+
+test('part de chacun sur un exercice en relais', async () => {
+  const { shareOf } = await import('../src/lib/custom.js')
+  const x = { relays: [{ w: 'B', q: 250, u: 'm', s: 0, e: 60000 }, { w: 'A', q: 500, u: 'm', s: 60000, e: 180000 }, { w: 'B', q: 250, u: 'm', s: 180000, e: 240000 }] }
+  assert.equal(shareOf(x, 'A').pct, 0.5); assert.equal(shareOf(x, 'A').amt, 500); assert.equal(shareOf(x, 'B').n, 2)
+  const y = { relays: [{ w: 'A', s: 0, e: 30000 }, { w: 'B', s: 30000, e: 90000 }] }
+  assert.equal(Math.round(shareOf(y, 'B').pct * 100), 67); assert.equal(shareOf(y, 'B').u, 's')
+})
