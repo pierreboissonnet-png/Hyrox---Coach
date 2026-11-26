@@ -15,6 +15,7 @@ import { series, hrStat, zonesOf, zoneOf, hrAt } from '../lib/hr.js'
 import { activeTeams, KIND } from './common.js'
 import { slotsOf, slotName } from './Teams.jsx'
 import { KeeperPicker } from './Sessions.jsx'
+import { HRZoom } from './HRZoom.jsx'
 
 const inp = { background: 'var(--fill)', borderRadius: 10, padding: '8px 10px', border: '1px solid rgba(120,120,128,.35)', minWidth: 0, width: '100%', textAlign: 'left', fontSize: 16, color: 'var(--ink)', boxSizing: 'border-box' }
 const pct = a => a == null ? '—' : Math.round(a * 100) + ' %'
@@ -306,6 +307,10 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
   // Atelier Hyrox en duo : rappel des relais prévus dans le plan de course de l'équipe
   const { teams } = useApp(), team = s.team_id ? teams.find(x => x.id === s.team_id) : null
   const relaysOf = ex => team && STATION[ex] ? planRelays(normPlan(team.plan), ex) : []
+  // Relais pointés pendant un exercice fait à deux (comme sur une séance Hyrox)
+  const relayable = x => !!(s.athletes && s.athletes.B && x.w === 'AB' && !x.auto && !x.window && !x.hold)
+  const firstW = x => (relaysOf(x.ex)[0] || {}).w || 'A'
+  const openRel = x => x.relays && x.relays.length && x.relays[x.relays.length - 1].e == null ? x.relays[x.relays.length - 1] : null
   // Enchaînement automatique (Tabata, intervalles, EMOM, AMRAP) : fin d'effort et départ après la récupération
   const lock = useRef(null)
   useEffect(() => {
@@ -335,11 +340,18 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
         {steps[cur + 1] && <div className="tiny muted center">Ensuite : {stepLabel(steps[cur + 1])}</div>}
         {st.s == null ? <>
           {restLeft != null && <div className={'center num ' + (restLeft > 0 ? '' : 'good')} style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>{restLeft > 0 ? 'Récup ' + fmt(restLeft) : 'C’est reparti !'}</div>}
-          <div className="pad"><button className="btn green full" onClick={() => { const x = cl(); x.steps[cur].s = rel(); commit(x) }}><Icon name="play" />Démarrer<small>{exLabel(st)}</small></button></div>
+          {relayable(st) ? <div className="pad">{(() => { const f = firstW(st); return [f, f === 'A' ? 'B' : 'A'].map((w, k) => <button key={w} className={'btn ' + (w === 'B' ? 'who-b' : 'who-a')} onClick={() => { const x = cl(), t0 = rel(); x.steps[cur].s = t0; x.steps[cur].relays = [{ w, s: t0, e: null }]; commit(x) }}>Départ {who(w)}<small>{k === 0 && relaysOf(st.ex).length ? 'premier relais (plan)' : exLabel(st)}</small></button>) })()}
+            <button className="btn green full small" style={{ minHeight: 44 }} onClick={() => { const x = cl(); x.steps[cur].s = rel(); commit(x) }}>Démarrer sans pointer les relais</button></div>
+          : <div className="pad"><button className="btn green full" onClick={() => { const x = cl(); x.steps[cur].s = rel(); commit(x) }}><Icon name="play" />Démarrer<small>{exLabel(st)}</small></button></div>}
         </> : <>
           <div className="center num" style={{ fontSize: 34, fontWeight: 700 }}>{st.auto && st.target.time ? <>{fmt(Math.max(0, st.target.time - (t - st.s) / 1000))}<span className="muted small"> restant</span></> : <>{fmt((t - st.s) / 1000, true)}{st.target.time ? <span className="muted small"> / {fmt(st.target.time)}</span> : ''}</>}</div>
           {st.window && <div className="center small muted">Minute en cours : {fmt(Math.max(0, st.window - (t - st.s) / 1000))} avant la suivante</div>}
-          <div className="pad" style={{ marginTop: 10 }}><button className="btn red full" onClick={() => { const x = cl(); x.steps[cur].e = rel(); commit(x) }}>Terminé<small>enregistrer le temps</small></button></div>
+          {openRel(st) && (() => { const o2 = openRel(st), n = st.relays.length, nx = relaysOf(st.ex)[n], ow = o2.w === 'A' ? 'B' : 'A'; return <>
+            <div className="center small" style={{ marginTop: 4 }}>Relais {n} : <b>{who(o2.w)}</b> depuis <span className="num">{fmt((t - o2.s) / 1000)}</span>{relaysOf(st.ex)[n - 1] ? <span className="muted"> · prévu {relaysOf(st.ex)[n - 1].label}</span> : ''}</div>
+            <div className="pad" style={{ marginTop: 8 }}><button className={'btn ' + (ow === 'B' ? 'who-b' : 'who-a')} onClick={() => { const x = cl(), t1 = rel(), rs = x.steps[cur].relays; rs[rs.length - 1].e = t1; rs.push({ w: ow, s: t1, e: null }); commit(x) }}>Relais → {who(ow)}<small>{nx ? (nx.w === ow ? 'prévu ' + nx.label : 'hors plan') : relaysOf(st.ex).length ? 'au-delà du plan' : ''}</small></button>
+              <button className="btn red" onClick={() => { const x = cl(), t1 = rel(), rs = x.steps[cur].relays; rs[rs.length - 1].e = t1; x.steps[cur].e = t1; commit(x) }}>Terminé<small>fin du dernier relais</small></button></div>
+          </> })()}
+          {!openRel(st) && <div className="pad" style={{ marginTop: 10 }}><button className="btn red full" onClick={() => { const x = cl(); x.steps[cur].e = rel(); commit(x) }}>Terminé<small>enregistrer le temps</small></button></div>}
         </>}
       </> : <div className="center"><div className="cur">Séance terminée</div><div className="cur-sub">Durée totale {fmt(customSummary(s).total)}</div>
         <a className="btn" href={'#/seance/' + s.id + (keeperOnly ? '/temps' : '/stats')}>{keeperOnly ? 'Voir les résultats' : 'Voir l’analyse'}</a>
@@ -355,7 +367,40 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
 }
 
 // ---------------------------------------------------------------- réalisé (saisie / correction)
-export function CustomResults({ s, commit, patch, keeperOnly }) {
+/** Exercice (et relais) en cours à t secondes */
+function stepAt(s, t, who) {
+  const ms = t * 1000, L = s.data.steps || [], k = L.findIndex(x => x.s != null && x.e != null && ms >= x.s && ms <= x.e)
+  if (k < 0) { const nx = L.find(x => x.s != null && x.s > ms); return nx ? 'Récupération avant ' + stepLabel(nx) : 'Hors exercice' }
+  const rs = L[k].relays || [], j = rs.findIndex(r => r.s != null && r.e != null && ms >= r.s && ms <= r.e)
+  return stepLabel(L[k]) + (j >= 0 ? ` · relais ${j + 1} (${who(rs[j].w)})` : '')
+}
+/** Résumé des relais d'une étape : « Pierre 3 relais 2:10 · Marine 2 relais 1:58 » */
+export function relaySplit(x) {
+  const o = { A: { n: 0, t: 0 }, B: { n: 0, t: 0 } }
+  ;(x.relays || []).forEach(r => { if (r.s != null && r.e != null && o[r.w]) { o[r.w].n++; o[r.w].t += (r.e - r.s) / 1000 } })
+  return o
+}
+const unitOfStep = x => { const t = x.target || {}; return t.meters != null ? ' m' : t.reps != null ? ' reps' : t.cal != null ? ' kcal' : '' }
+/** Corriger les relais d'une étape faite à deux : qui, quantité, couper, fusionner, ajouter */
+function StepRelays({ x, who, onChange }) {
+  const rs = x.relays || [], u = unitOfStep(x)
+  const set = L => onChange(L)
+  if (!rs.length) return <button type="button" className="btn glass small" style={{ marginBottom: 8 }} onClick={() => set([{ w: 'A', s: x.s, e: x.e }])}>Répartir en relais</button>
+  return <div style={{ marginBottom: 8 }}>
+    <div className="tiny muted" style={{ marginBottom: 4 }}>Relais (touchez un nom pour changer qui ; ✂︎ coupe en deux, ✕ fusionne avec le voisin)</div>
+    {rs.map((r, k) => <div key={k + '-' + rs.length + '-' + r.w + '-' + r.q} className="row-gap small" style={{ flexWrap: 'nowrap', gap: 6, marginBottom: 4 }}>
+      <span className="num muted" style={{ width: 16 }}>{k + 1}</span>
+      <div className="seg" style={{ margin: 0, width: 132, flexShrink: 0 }}>{['A', 'B'].map(w => <button type="button" key={w} aria-pressed={r.w === w} style={{ fontSize: 13, padding: '6px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => set(rs.map((z, j) => j === k ? { ...z, w } : z))}>{(who(w) || w).split(' ')[0]}</button>)}</div>
+      <input inputMode="decimal" style={{ ...inp, width: 64, padding: '6px 8px' }} defaultValue={r.q ?? ''} placeholder={u.trim() || 'qté'} aria-label={'Quantité du relais ' + (k + 1)} onBlur={e => { const v = e.target.value.trim() === '' ? null : +e.target.value.replace(',', '.'); if (v !== (r.q ?? null)) set(rs.map((z, j) => j === k ? { ...z, q: v } : z)) }} />
+      <span className="num muted" style={{ flex: 1, textAlign: 'right' }}>{r.s != null && r.e != null ? fmt((r.e - r.s) / 1000) : ''}</span>
+      <button type="button" className="btn plain small" style={{ padding: '2px 4px' }} aria-label="Couper ce relais en deux" onClick={() => { const L = rs.map(z => ({ ...z })), mid = r.s != null && r.e != null ? Math.round((r.s + r.e) / 2) : null, h = r.q != null ? r.q / 2 : null; L.splice(k, 1, { ...r, e: mid, q: h }, { ...r, w: r.w === 'A' ? 'B' : 'A', s: mid, q: h }); set(L) }}>✂︎</button>
+      <button type="button" className="btn plain small" style={{ padding: '2px 4px', color: 'var(--bad)' }} aria-label="Supprimer ce relais" onClick={() => { if (rs.length < 2) return set([]); const L = rs.map(z => ({ ...z })), j = k > 0 ? k - 1 : 1; if (j < k) L[j].e = r.e; else L[j].s = r.s; if (L[j].q != null || r.q != null) L[j].q = (L[j].q || 0) + (r.q || 0); L.splice(k, 1); set(L) }}>✕</button>
+    </div>)}
+  </div>
+}
+const relSum = (x, who) => { if (!x.relays || !x.relays.length) return ''; const o = relaySplit(x); return ' · relais : ' + ['A', 'B'].filter(w => o[w].n).map(w => `${who ? who(w) : w} ${o[w].n}× ${fmt(o[w].t)}`).join(' · ') }
+
+export function CustomResults({ s, commit, patch, keeperOnly, who }) {
   const { reload } = useApp()
   const d = s.data, steps = d.steps || []
   const [open, setOpen] = useState(null)
@@ -373,11 +418,12 @@ export function CustomResults({ s, commit, patch, keeperOnly }) {
   return <>
     <div className="stats"><Stat k="Étapes réalisées" v={`${sum.done}/${sum.n}`} /><Stat k="Objectifs atteints" v={pct(sum.achievement)} tone={sum.achievement >= 1 ? 'good' : 'bad'} /><Stat k="Temps de travail" v={fmt(sum.work)} d={sum.rest ? 'récup ' + fmt(sum.rest) : ''} /></div>
     <List>{steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), pc = paceOf(x); return <React.Fragment key={i}>
-      <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}`}
+      <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}${relSum(x, who)}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
         <div className="row-gap" style={{ marginBottom: 8, flexWrap: 'nowrap' }}><span className="tiny muted">Exercice</span><ExSelect value={x.ex} name={x.name} onChange={(ex, nm) => setEx(i, ex, nm)} />
           <button type="button" className="icon-btn" style={{ width: 34, height: 34, color: 'var(--bad)' }} aria-label="Retirer cet exercice" onClick={() => delStep(i)}><Icon name="trash" size={17} /></button></div>
+        {hasB(s) && x.w === 'AB' && <StepRelays x={x} who={who} onChange={L => { const y = JSON.parse(JSON.stringify(d)); y.steps[i].relays = L; commit(y) }} />}
         <DoneForm key={x.ex} st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>
@@ -400,6 +446,7 @@ export function CustomStats({ s, who }) {
   const { profile, teams } = useApp()
   const rows = useLoad(() => api.hr.list(s.id), [s.id])
   const sum = customSummary(s), steps = sum.steps, d = s.data
+  const [zoom, setZoom] = useState(false)
   const slots = hasB(s) ? ['A', 'B'] : ['A']
   const prof = w => { const id = s.athletes[w]; if (id === profile.id) return profile; for (const t of teams) { const m = t.members.find(x => x.user_id === id); if (m) return m.profile } return null }
   const get = w => (rows.data || []).find(r => r.user_id === s.athletes[w])
@@ -423,13 +470,26 @@ export function CustomStats({ s, who }) {
       <Stat k="Dépense estimée" v={kcal ? kcal + ' kcal' : '—'} d={all ? 'd’après la FC' : 'estimation sans cardio'} />
       <Stat k="FC moyenne / max" v={all ? Math.round(all.avg) + ' / ' + all.max : '—'} d={all ? '' : 'importez le cardio (onglet Cardio)'} />
     </div>
-    {ser.length > 0 && <div className="glass card"><LineChart series={ser} bands={bands} height={170} /><div className="legend">{slots.map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)}</span>)}<span>bandes = exercices</span></div>
+    {ser.length > 0 && <div className="glass card"><button type="button" onClick={() => setZoom(true)} aria-label="Agrandir le graphique cardio" style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'none', cursor: 'zoom-in' }}><LineChart series={ser} bands={bands} height={170} /></button>
+      {zoom && <HRZoom ser={slots.map(w => { const R = series(get(w)); return R && { color: COLORS[w], name: who(w), pts: R.t.map((x, k) => [x, R.b[k]]) } }).filter(Boolean)} bands={bands} labelAt={t => stepAt(s, t, who)} onClose={() => setZoom(false)} />}<div className="legend">{slots.map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)}</span>)}<span>bandes = exercices</span></div>
       {n > 0 && <div className="zones" style={{ marginTop: 8 }}>{z.map((v, i) => <i key={i} className={'z' + (i + 1)} style={{ width: (v / n * 100) + '%' }} />)}</div>}</div>}
     <h2 className="sec">Exercice par exercice</h2>
     <div className="glass card scroll-x"><table className="tbl"><thead><tr><th>Étape</th><th className="r">Objectif</th><th className="r">Réalisé</th><th className="r">%</th><th className="r">FC moy/max</th></tr></thead><tbody>
       {steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), h = by[i]; return <tr key={i}><td>{stepLabel(x)}</td><td className="r small">{fmtTarget(x.target)}</td><td className="r small">{fmtTarget(dn)}</td>
         <td className={'r num ' + (a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even')}>{pct(a)}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
     </tbody></table></div>
+    {steps.some(x => x.relays && x.relays.length) && <>
+      <h2 className="sec">Relais</h2>
+      <p className="foot" style={{ marginTop: -4 }}>Pour chaque relais : qui travaillait, combien de temps, et sa fréquence cardiaque (moyenne / max) pendant le relais{slots.some(w => !get(w)) ? ' (importez le cardio de chacun dans l’onglet Cardio)' : ''}.</p>
+      {steps.map((x, i) => !(x.relays && x.relays.length) ? null : (() => {
+        const o2 = relaySplit(x), S2 = { A: series(get('A')), B: series(get('B')) }
+        return <div className="glass card scroll-x" key={i}>
+          <div className="row-gap small" style={{ marginBottom: 4 }}><b>{stepLabel(x)}</b><span className="spacer" />{['A', 'B'].filter(w => o2[w].n).map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)} {o2[w].n}× {fmt(o2[w].t)} </span>)}</div>
+          <table className="tbl"><thead><tr><th>#</th><th>Qui</th><th className="r">Quantité</th><th className="r">Durée</th><th className="r">FC moy/max</th></tr></thead><tbody>
+            {x.relays.map((r, k) => { const h = r.s != null && r.e != null && S2[r.w] ? hrStat(S2[r.w], r.s / 1000, r.e / 1000) : null; return <tr key={k}><td className="num">{k + 1}</td><td><span className={r.w === 'A' ? 'dotA' : 'dotB'} />{who(r.w)}</td>
+              <td className="r small">{r.q != null ? r.q + unitOfStep(x) : '—'}</td><td className="r num">{r.s != null && r.e != null ? fmt((r.e - r.s) / 1000) : '—'}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
+          </tbody></table></div> })())}
+    </>}
     <h2 className="sec">Objectifs proposés pour la prochaine fois</h2>
     <List>{prog.map((p, i) => <div className="row stack" key={i}><div className="row-gap"><b>{p.label}</b><span className="spacer" /><span className={'badge ' + (p.achievement >= 1 ? 'good' : p.achievement < 0.9 ? 'bad' : '')}>{pct(p.achievement)}</span></div>
       <span className="small">{fmtTarget(p.target)} → <b>{fmtTarget(p.next)}</b></span><span className="small muted">{p.why}{p.e1rm ? ` · 1RM estimé ${Math.round(p.e1rm)} kg` : ''}{p.hmax ? ` · FC max ${p.hmax}` : ''}</span></div>)}</List>
