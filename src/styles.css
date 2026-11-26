@@ -256,3 +256,7 @@ html:has(.backdrop), body:has(.backdrop) { overflow: hidden }
 .nav:has(.actions > :nth-child(3)) .nav-title { display: none }
 /* Feuilles : fond flouté (le contenu derrière ne doit pas se lire à travers) */
 .sheet { -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6) }
+/* Pages à onglets figés (Santé) : en-tête et onglets forment un seul bandeau « verre », sans trou entre les deux */
+.page:has(.sticky-tabs) .nav.stuck { background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6) }
+.page:has(.sticky-tabs) .nav.stuck .nav-title { background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none }
+.sticky-tabs { top: calc(env(safe-area-inset-top) + 44px) }

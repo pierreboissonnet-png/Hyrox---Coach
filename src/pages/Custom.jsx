@@ -7,7 +7,7 @@ import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoa
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone, STATION, normPlan, planRelays } from '../lib/hyrox.js'
-import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel } from '../lib/custom.js'
+import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel, relayUnit, stepTotal, genRelays, timeRelays } from '../lib/custom.js'
 import { LIBRARY, LIB_CATS, LIB } from '../lib/library.js'
 import { activeZones, hits, altFor, adaptBlocks, ZONE } from '../lib/pain.js'
 import { StretchSuggest } from './Body.jsx'
@@ -376,29 +376,58 @@ function stepAt(s, t, who) {
 }
 /** Résumé des relais d'une étape : « Pierre 3 relais 2:10 · Marine 2 relais 1:58 » */
 export function relaySplit(x) {
-  const o = { A: { n: 0, t: 0 }, B: { n: 0, t: 0 } }
-  ;(x.relays || []).forEach(r => { if (r.s != null && r.e != null && o[r.w]) { o[r.w].n++; o[r.w].t += (r.e - r.s) / 1000 } })
+  const o = { A: { n: 0, t: 0, q: 0 }, B: { n: 0, t: 0, q: 0 } }
+  ;(x.relays || []).forEach(r => { if (!o[r.w]) return; o[r.w].n++; if (r.s != null && r.e != null) o[r.w].t += (r.e - r.s) / 1000; if (+r.q > 0 && r.u !== 's') o[r.w].q += +r.q })
   return o
 }
 const unitOfStep = x => { const t = x.target || {}; return t.meters != null ? ' m' : t.reps != null ? ' reps' : t.cal != null ? ' kcal' : '' }
-/** Corriger les relais d'une étape faite à deux : qui, quantité, couper, fusionner, ajouter */
+const UNITS = [['m', 'mètres'], ['reps', 'reps'], ['s', 'secondes'], ['kcal', 'kcal']]
+const uTxt = u => u === 's' ? ' s' : u === 'reps' ? ' reps' : u === 'kcal' ? ' kcal' : ' m'
+/** Corriger les relais d'une étape faite à deux : découpage rapide (« X commence, relais tous les N ») puis relais un par un */
 function StepRelays({ x, who, onChange }) {
-  const rs = x.relays || [], u = unitOfStep(x)
-  const set = L => onChange(L)
-  if (!rs.length) return <button type="button" className="btn glass small" style={{ marginBottom: 8 }} onClick={() => set([{ w: 'A', s: x.s, e: x.e }])}>Répartir en relais</button>
-  return <div style={{ marginBottom: 8 }}>
-    <div className="tiny muted" style={{ marginBottom: 4 }}>Relais (touchez un nom pour changer qui ; ✂︎ coupe en deux, ✕ fusionne avec le voisin)</div>
-    {rs.map((r, k) => <div key={k + '-' + rs.length + '-' + r.w + '-' + r.q} className="row-gap small" style={{ flexWrap: 'nowrap', gap: 6, marginBottom: 4 }}>
+  const [L, setL] = useState(() => (x.relays || []).map(r => ({ ...r })))
+  const [u, setU] = useState(() => relayUnit(x))
+  const total = stepTotal(x, u)
+  const [g, setG] = useState({ first: (x.relays && x.relays[0] && x.relays[0].w) || 'A', every: u === 's' ? 30 : u === 'reps' ? 10 : u === 'm' ? (total >= 500 ? 250 : 10) : 10 })
+  const [dirty, setDirty] = useState(false)
+  const upd = f => { setL(f); setDirty(true) }
+  const sum = L.reduce((a, r) => a + (+r.q || 0), 0)
+  const short = n => (who(n) || n).split(' ')[0]
+  return <div style={{ marginBottom: 10 }}>
+    <div className="small" style={{ fontWeight: 600, marginBottom: 6 }}>Relais</div>
+    <div className="row-gap small" style={{ gap: 6, marginBottom: 6 }}><span className="muted">Compter en</span>
+      <div className="seg" style={{ margin: 0, flex: 1 }}>{UNITS.map(([k, l]) => <button type="button" key={k} aria-pressed={u === k} style={{ fontSize: 13, padding: '6px 4px' }} onClick={() => { setU(k); upd(A => A.map(r => ({ ...r, u: k }))) }}>{l}</button>)}</div></div>
+    <div className="glass card" style={{ padding: 10, marginBottom: 8 }}>
+      <div className="tiny muted" style={{ marginBottom: 6 }}>Découpage rapide</div>
+      <div className="row-gap small" style={{ gap: 6 }}>
+        <div className="seg" style={{ margin: 0, width: 132 }}>{['A', 'B'].map(w => <button type="button" key={w} aria-pressed={g.first === w} style={{ fontSize: 13, padding: '6px 4px' }} onClick={() => setG({ ...g, first: w })}>{short(w)}</button>)}</div>
+        <span className="muted">commence, relais tous les</span>
+        <input inputMode="decimal" style={{ ...inp, width: 64, padding: '6px 8px' }} value={g.every} onChange={e => setG({ ...g, every: e.target.value })} aria-label="Relais tous les" /><span className="muted">{uTxt(u).trim()}</span>
+      </div>
+      <button type="button" className="btn tinted small block" style={{ marginTop: 8 }} disabled={!total} onClick={() => upd(genRelays(g.first, +String(g.every).replace(',', '.'), total, u))}>
+        {total ? `Découper ${total}${uTxt(u)} en relais` : 'Saisissez d’abord le réalisé (' + uTxt(u).trim() + ')'}</button>
+    </div>
+    {L.map((r, k) => <div key={k} className="row-gap small" style={{ flexWrap: 'nowrap', gap: 6, marginBottom: 4 }}>
       <span className="num muted" style={{ width: 16 }}>{k + 1}</span>
-      <div className="seg" style={{ margin: 0, width: 132, flexShrink: 0 }}>{['A', 'B'].map(w => <button type="button" key={w} aria-pressed={r.w === w} style={{ fontSize: 13, padding: '6px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => set(rs.map((z, j) => j === k ? { ...z, w } : z))}>{(who(w) || w).split(' ')[0]}</button>)}</div>
-      <input inputMode="decimal" style={{ ...inp, width: 64, padding: '6px 8px' }} defaultValue={r.q ?? ''} placeholder={u.trim() || 'qté'} aria-label={'Quantité du relais ' + (k + 1)} onBlur={e => { const v = e.target.value.trim() === '' ? null : +e.target.value.replace(',', '.'); if (v !== (r.q ?? null)) set(rs.map((z, j) => j === k ? { ...z, q: v } : z)) }} />
-      <span className="num muted" style={{ flex: 1, textAlign: 'right' }}>{r.s != null && r.e != null ? fmt((r.e - r.s) / 1000) : ''}</span>
-      <button type="button" className="btn plain small" style={{ padding: '2px 4px' }} aria-label="Couper ce relais en deux" onClick={() => { const L = rs.map(z => ({ ...z })), mid = r.s != null && r.e != null ? Math.round((r.s + r.e) / 2) : null, h = r.q != null ? r.q / 2 : null; L.splice(k, 1, { ...r, e: mid, q: h }, { ...r, w: r.w === 'A' ? 'B' : 'A', s: mid, q: h }); set(L) }}>✂︎</button>
-      <button type="button" className="btn plain small" style={{ padding: '2px 4px', color: 'var(--bad)' }} aria-label="Supprimer ce relais" onClick={() => { if (rs.length < 2) return set([]); const L = rs.map(z => ({ ...z })), j = k > 0 ? k - 1 : 1; if (j < k) L[j].e = r.e; else L[j].s = r.s; if (L[j].q != null || r.q != null) L[j].q = (L[j].q || 0) + (r.q || 0); L.splice(k, 1); set(L) }}>✕</button>
+      <div className="seg" style={{ margin: 0, width: 120, flexShrink: 0 }}>{['A', 'B'].map(w => <button type="button" key={w} aria-pressed={r.w === w} style={{ fontSize: 13, padding: '6px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => upd(A => A.map((z, j) => j === k ? { ...z, w } : z))}>{short(w)}</button>)}</div>
+      <input inputMode="decimal" style={{ ...inp, width: 60, padding: '6px 8px' }} value={r.q ?? ''} placeholder={uTxt(u).trim()} aria-label={'Quantité du relais ' + (k + 1)} onChange={e => { const v = e.target.value.replace(',', '.'); upd(A => A.map((z, j) => j === k ? { ...z, q: v === '' ? null : v, u } : z)) }} />
+      <span className="tiny muted" style={{ width: 30 }}>{uTxt(u).trim()}</span>
+      <span className="num muted" style={{ flex: 1, textAlign: 'right' }}>{r.s != null && r.e != null && !dirty ? (r.est ? '≈' : '') + fmt((r.e - r.s) / 1000) : ''}</span>
+      <button type="button" className="btn plain small" style={{ padding: '2px 6px', color: 'var(--bad)' }} aria-label={'Supprimer le relais ' + (k + 1)} onClick={() => upd(A => A.filter((_, j) => j !== k))}>✕</button>
     </div>)}
+    <div className="row-gap small" style={{ marginTop: 4 }}>
+      <button type="button" className="btn plain small" style={{ padding: '2px 0' }} onClick={() => upd(A => [...A, { w: A.length ? (A[A.length - 1].w === 'A' ? 'B' : 'A') : g.first, q: null, u }])}>+ Ajouter un relais</button>
+      <span className="spacer" />{L.length > 0 && <span className={'num ' + (total && Math.abs(sum - total) > 0.01 ? 'bad' : 'muted')}>Total {Math.round(sum * 100) / 100}{total ? ' / ' + total : ''}{uTxt(u)}</span>}
+    </div>
+    {dirty && <button type="button" className="btn small block" style={{ marginTop: 6 }} onClick={() => {
+      const R = L.map(r => ({ w: r.w, q: r.q === '' || r.q == null ? null : +r.q, u }))
+      // Relais chronométrés : on garde leurs vrais temps tant qu'on ne change que les noms ou les quantités
+      const keep = L.length && L.every(r => r.s != null && r.e != null && !r.est)
+      onChange(keep ? L.map((r, k) => ({ ...r, ...R[k] })) : timeRelays(x, R)); setDirty(false) }}>Enregistrer les relais</button>}
+    {!dirty && L.some(r => r.est) && <div className="tiny muted" style={{ marginTop: 4 }}>≈ durées estimées au prorata des quantités (relais non chronométrés).</div>}
   </div>
 }
-const relSum = (x, who) => { if (!x.relays || !x.relays.length) return ''; const o = relaySplit(x); return ' · relais : ' + ['A', 'B'].filter(w => o[w].n).map(w => `${who ? who(w) : w} ${o[w].n}× ${fmt(o[w].t)}`).join(' · ') }
+const relSum = (x, who) => { if (!x.relays || !x.relays.length) return ''; const o = relaySplit(x), u = x.relays[0].u || ''; return ' · relais : ' + ['A', 'B'].filter(w => o[w].n).map(w => `${who ? who(w) : w} ${o[w].n}×${o[w].q ? ' ' + Math.round(o[w].q) + uTxt(u) : ''} ${fmt(o[w].t)}`).join(' · ') }
 
 export function CustomResults({ s, commit, patch, keeperOnly, who }) {
   const { reload } = useApp()
@@ -423,7 +452,7 @@ export function CustomResults({ s, commit, patch, keeperOnly, who }) {
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
         <div className="row-gap" style={{ marginBottom: 8, flexWrap: 'nowrap' }}><span className="tiny muted">Exercice</span><ExSelect value={x.ex} name={x.name} onChange={(ex, nm) => setEx(i, ex, nm)} />
           <button type="button" className="icon-btn" style={{ width: 34, height: 34, color: 'var(--bad)' }} aria-label="Retirer cet exercice" onClick={() => delStep(i)}><Icon name="trash" size={17} /></button></div>
-        {hasB(s) && x.w === 'AB' && <StepRelays x={x} who={who} onChange={L => { const y = JSON.parse(JSON.stringify(d)); y.steps[i].relays = L; commit(y) }} />}
+        {hasB(s) && x.w === 'AB' && <StepRelays key={i + ':' + (x.relays || []).length + ':' + x.ex} x={x} who={who} onChange={L => { const y = JSON.parse(JSON.stringify(d)); y.steps[i].relays = L; commit(y) }} />}
         <DoneForm key={x.ex} st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>
@@ -468,7 +497,7 @@ export function CustomStats({ s, who }) {
       <Stat k="Objectifs atteints" v={pct(sum.achievement)} d={`${sum.done}/${sum.n} étapes`} tone={sum.achievement >= 1 ? 'good' : sum.achievement < 0.9 ? 'bad' : 'even'} />
       <Stat k="Durée" v={fmt(sum.total)} d={'travail ' + fmt(sum.work)} />
       <Stat k="Dépense estimée" v={kcal ? kcal + ' kcal' : '—'} d={all ? 'd’après la FC' : 'estimation sans cardio'} />
-      <Stat k="FC moyenne / max" v={all ? Math.round(all.avg) + ' / ' + all.max : '—'} d={all ? '' : 'importez le cardio (onglet Cardio)'} />
+      <Stat k={all ? 'FC moyenne / max' : 'FC moyenne'} v={all ? Math.round(all.avg) + ' / ' + all.max : d.avgHR ? d.avgHR + ' bpm' : '—'} d={all ? '' : d.avgHR ? 'saisie à la main' : 'importez le cardio (onglet Cardio)'} />
     </div>
     {ser.length > 0 && <div className="glass card"><button type="button" onClick={() => setZoom(true)} aria-label="Agrandir le graphique cardio" style={{ display: 'block', width: '100%', padding: 0, border: 0, background: 'none', cursor: 'zoom-in' }}><LineChart series={ser} bands={bands} height={170} /></button>
       {zoom && <HRZoom ser={slots.map(w => { const R = series(get(w)); return R && { color: COLORS[w], name: who(w), pts: R.t.map((x, k) => [x, R.b[k]]) } }).filter(Boolean)} bands={bands} labelAt={t => stepAt(s, t, who)} onClose={() => setZoom(false)} />}<div className="legend">{slots.map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)}</span>)}<span>bandes = exercices</span></div>
@@ -487,7 +516,7 @@ export function CustomStats({ s, who }) {
           <div className="row-gap small" style={{ marginBottom: 4 }}><b>{stepLabel(x)}</b><span className="spacer" />{['A', 'B'].filter(w => o2[w].n).map(w => <span key={w}><span className={w === 'A' ? 'dotA' : 'dotB'} />{who(w)} {o2[w].n}× {fmt(o2[w].t)} </span>)}</div>
           <table className="tbl"><thead><tr><th>#</th><th>Qui</th><th className="r">Quantité</th><th className="r">Durée</th><th className="r">FC moy/max</th></tr></thead><tbody>
             {x.relays.map((r, k) => { const h = r.s != null && r.e != null && S2[r.w] ? hrStat(S2[r.w], r.s / 1000, r.e / 1000) : null; return <tr key={k}><td className="num">{k + 1}</td><td><span className={r.w === 'A' ? 'dotA' : 'dotB'} />{who(r.w)}</td>
-              <td className="r small">{r.q != null ? r.q + unitOfStep(x) : '—'}</td><td className="r num">{r.s != null && r.e != null ? fmt((r.e - r.s) / 1000) : '—'}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
+              <td className="r small">{r.q != null ? r.q + uTxt(r.u || relayUnit(x)) : '—'}</td><td className="r num">{r.s != null && r.e != null ? (r.est ? '≈' : '') + fmt((r.e - r.s) / 1000) : '—'}</td><td className="r num">{h ? Math.round(h.avg) + ' / ' + h.max : '—'}</td></tr> })}
           </tbody></table></div> })())}
     </>}
     <h2 className="sec">Objectifs proposés pour la prochaine fois</h2>

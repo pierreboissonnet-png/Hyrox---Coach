@@ -64,12 +64,16 @@ export function usePlanData() {
   const doneOn = d => !!(manual[d] || (byDate[d] && !off[d]))
   const ach14 = useMemo(() => { const v = sessions.filter(s => isCustom(s) && isAthlete(s, profile.id) && s.session_date >= addDays(today, -14) && s.session_date < today).map(s => customSummary(s).achievement).filter(x => x != null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null }, [sessions])
   const extras = useMemo(() => { if (!plan) return 0; const keyOf = {}; plan.weeks.forEach(w => w.days.forEach(d => { keyOf[d.date] = d.key })); let n = 0; Object.entries(byDate).forEach(([d, L]) => { if (d >= addDays(today, -14) && d < today) n += Math.max(0, L.length - (keyOf[d] && keyOf[d] !== 'repos' ? 1 : 0)) }); return n }, [plan, byDate])
+  // Séances faites en plus du plan (un jour de repos, ou une 2e séance un jour déjà prévu)
+  const workCount = useMemo(() => { const m = {}; if (plan) plan.weeks.forEach(w => w.days.forEach(d => { if (d.key !== 'repos') m[d.date] = (m[d.date] || 0) + 1 })); return m }, [plan])
+  const extraOn = date => Math.max(0, ((byDate[date] || []).length) - (workCount[date] || 0))
+  const extrasAll = plan ? Object.keys(byDate).filter(d => d >= (plan.created || '0') && d <= today).reduce((a, d) => a + extraOn(d), 0) : 0
   const raceChanged = !!(plan && race && (plan.raceId !== race.id || plan.raceDate !== race.race_date)) || !!(plan && !race && plan.raceId)
   const prog = plan ? progress(plan, doneOn, today, { ach: ach14, extras, raceChanged }) : null
   const params = (o = {}) => ({ race, from: today, perWeek: o.perWeek || (plan && plan.perWeek) || 4, gaps: an.gaps, duo: an.duo, e1rm: ins.e1rm, pace: an.pace, level: o.level, template: o.template !== undefined ? o.template : template })
   const ready = !planJ.loading && !doneJ.loading && !lvl.loading && !tplJ.loading
   const mySessions = sessions.filter(s => isAthlete(s, profile.id))
-  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, off, prog, extras, params, today, sessions: mySessions }
+  return { race, plan, entry, planJ, doneJ, tplJ, tplEntry, template, ready, vitals: vit.data || [], an, ins, level, doneOn, byDate, manual, off, extraOn, extrasAll, prog, extras, params, today, sessions: mySessions }
 }
 
 function GapList({ gaps, empty }) {
@@ -344,7 +348,7 @@ export function useTodayPlan() {
   if (!P.plan) return null
   const w = P.plan.weeks.find(x => x.start === mondayOf(P.today)); if (!w) return null
   const d = w.days.find(x => x.date === P.today)
-  return d ? { d, phase: w.phase, done: P.doneOn(P.today), prog: P.prog, week: w, doneOn: P.doneOn, gaps: P.an.gaps, vitals: P.vitals, today: P.today, created: P.plan.created, wi: P.plan.weeks.indexOf(w), W: P.plan.weeks.length, raceName: P.plan.raceName } : null
+  return d ? { d, phase: w.phase, done: P.doneOn(P.today), prog: P.prog, week: w, doneOn: P.doneOn, gaps: P.an.gaps, vitals: P.vitals, today: P.today, created: P.plan.created, extraOn: P.extraOn, extrasAll: P.extrasAll, wi: P.plan.weeks.indexOf(w), W: P.plan.weeks.length, raceName: P.plan.raceName } : null
 }
 
 /** Semaine type : cours avec coach (fixes), créneaux de renfo libre, repos imposés */

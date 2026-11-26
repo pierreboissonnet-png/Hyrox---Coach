@@ -383,7 +383,9 @@ function Cardio({ s, d, duo, who }) {
       </tbody></table></div>
       </>}
     </>}
-    {!rows.loading && !ser.length && <div className="glass card"><Empty icon="heart">Aucune donnée cardio pour cette séance.</Empty></div>}
+    {!rows.loading && !ser.length && (s.data && s.data.avgHR ? <div className="glass card"><div className="row-gap"><Icon name="heart" size={18} /><b>FC moyenne saisie : {s.data.avgHR} bpm</b></div>
+      <p className="small muted" style={{ margin: '6px 0 0' }}>Prise en compte pour la dépense estimée de la séance (coach nutrition, suivi). Pour la courbe minute par minute, importez le fichier de la montre ci-dessus.</p></div>
+      : <div className="glass card"><Empty icon="heart">Aucune donnée cardio pour cette séance.</Empty></div>)}
   </>
 }
 

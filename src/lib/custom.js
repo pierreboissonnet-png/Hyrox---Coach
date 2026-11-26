@@ -283,3 +283,32 @@ export function zonesOfBlocks(blocks) {
   const z = new Set(); (blocks || []).forEach(b => (isGroup(b) ? b.items : [b]).forEach(i => ((EX[i.ex] || {}).z || []).forEach(x => z.add(x)))); return [...z]
 }
 export { parseT }
+
+// ---------- Relais d'un exercice fait à deux (séances perso) ----------
+/** Unité naturelle des relais d'une étape : m, reps, kcal, ou s (temps) */
+export const relayUnit = x => { const t = x.target || {}, d = x.done || {}; return (x.relays || []).find(r => r.u)?.u || (t.meters != null || d.meters != null ? 'm' : t.reps != null || d.reps != null ? 'reps' : t.cal != null ? 'kcal' : 's') }
+/** Quantité totale de l'étape dans une unité (pour le temps : durée chronométrée) */
+export function stepTotal(x, u) {
+  const d = doneOf(x), t = x.target || {}
+  if (u === 's') return d.time != null ? Math.round(d.time) : t.time || null
+  const k = u === 'm' ? 'meters' : u === 'reps' ? 'reps' : 'cal'
+  return d[k] ?? t[k] ?? null
+}
+/** Relais alternés : « X commence, relais tous les N » jusqu'au total (le dernier relais est plus court si besoin) */
+export function genRelays(first, every, total, u) {
+  const out = []; if (!(every > 0) || !(total > 0)) return out
+  let w = first, done = 0
+  while (done < total - 1e-9 && out.length < 400) { const q = Math.min(every, total - done); out.push({ w, q: Math.round(q * 100) / 100, u }); done += q; w = w === 'A' ? 'B' : 'A' }
+  return out
+}
+/** Temps de chaque relais : en secondes = cumul exact ; sinon au prorata des quantités sur la durée de l'étape (estimé) */
+export function timeRelays(x, relays) {
+  if (x.s == null || x.e == null || !relays.length) return relays.map(r => ({ ...r, s: r.s ?? null, e: r.e ?? null }))
+  const dur = x.e - x.s, q = relays.map(r => +r.q > 0 ? +r.q : 0), tot = q.reduce((a, b) => a + b, 0)
+  let c = x.s
+  return relays.map((r, k) => {
+    const part = r.u === 's' ? q[k] * 1000 : tot > 0 ? dur * q[k] / tot : dur / relays.length
+    const s = Math.round(c), e = k === relays.length - 1 ? x.e : Math.min(x.e, Math.round(c + part)); c += part
+    return { ...r, s, e, est: r.u !== 's' }
+  })
+}

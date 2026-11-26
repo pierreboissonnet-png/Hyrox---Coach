@@ -205,9 +205,23 @@ export function Health() {
   const tabs = [['forme', 'Forme'], ['douleurs', 'Douleurs'], ['sommeil', 'Sommeil'], ['poids', 'Poids'], ['sang', 'Sang'], ...(profile.sex === 'F' ? [['cycle', 'Cycle']] : [])]
   return <Page back="#/moi" title="Santé" subtitle="Privé : visible par vous seul(e).">
     <div className="sticky-tabs"><Chips value={tab} onChange={setTab} label="Rubriques" options={tabs} /></div>
+    <SyncStale />
     {tab === 'douleurs' && <Pains />}
     {tab === 'sommeil' && <Sleep />}{tab === 'poids' && <Weight />}{tab === 'sang' && <Blood />}{tab === 'cycle' && profile.sex === 'F' && <Cycle />}{tab === 'forme' && <Wellbeing />}
   </Page>
+}
+/** Synchro Santé (iPhone) arrêtée : l'automatisation Raccourcis ne tourne plus → on le dit clairement */
+function SyncStale() {
+  const tk = useLoad(() => api.health.tokens(), [])
+  const L = (tk.data || []).filter(t => t.last_used), last = L.map(t => t.last_used).sort().pop()
+  if (!last) return null
+  const h = (Date.now() - Date.parse(last)) / 36e5
+  if (h < 36) return null
+  const dt = new Date(last), days = Math.floor(h / 24)
+  return <a href="#/moi/sync" className="glass card" style={{ display: 'block', color: 'inherit', borderLeft: '4px solid var(--warn, #ff9f0a)', marginTop: 10 }}>
+    <b>Synchro Santé arrêtée depuis {days} jour{days > 1 ? 's' : ''}</b>
+    <div className="small muted" style={{ marginTop: 4 }}>Dernier envoi de l’iPhone le {dt.toLocaleDateString('fr-FR')} à {dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : nuits, FC au repos et poids ne sont plus mis à jour. Sur l’iPhone, ouvrez Raccourcis › Automatisation, vérifiez que l’automatisation est active et réglée sur « Exécuter immédiatement », puis lancez le raccourci une fois à la main. Touchez ici pour revoir le guide.</div>
+  </a>
 }
 function Sleep() {
   const { races, settings, setSettings } = useApp(), toast = useToast()

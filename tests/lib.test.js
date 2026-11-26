@@ -151,3 +151,11 @@ test('atelier raccourci : quantité réelle et objectif ajusté', async () => {
   assert.equal(qtyOf(d, 'ski'), 800); assert.equal(qtyFrac(d, 'ski'), 0.8)
   assert.equal(qtyOf(d, 'row'), 1000); assert.equal(qtyFrac({}, 'wb'), 1)
 })
+
+test('relais de séance perso : découpage rapide et temps au prorata', async () => {
+  const { genRelays, timeRelays, relayUnit } = await import('../src/lib/custom.js')
+  const L = genRelays('B', 30, 232, 's'); assert.equal(L.length, 8); assert.equal(L[0].w, 'B'); assert.equal(L[7].q, 22)
+  const x = { ex: 'row', s: 1000, e: 241000, target: { meters: 1000 } }; assert.equal(relayUnit(x), 'm')
+  const T = timeRelays(x, [{ w: 'B', q: 250, u: 'm' }, { w: 'A', q: 500, u: 'm' }, { w: 'B', q: 250, u: 'm' }])
+  assert.equal(T[0].s, 1000); assert.equal(T[0].e, 61000); assert.equal(T[2].e, 241000); assert.ok(T[1].est)
+})
