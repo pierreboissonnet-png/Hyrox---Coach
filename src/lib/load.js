@@ -1,6 +1,6 @@
 // Charge d'entraînement et dépense : relie séances (Hyrox ou spécialisées), cardio, programme et nutrition.
 import { normData } from './session.js'
-import { isCustom, customSummary, doneOf, kcalFromHR, kcalFromMET, progression, e1rm, EX } from './custom.js'
+import { isCustom, customSummary, doneOf, kcalFromHR, kcalFromMET, progression, e1rm, EX, rpeOf } from './custom.js'
 import { series, hrStat } from './hr.js'
 
 const isAth = (s, uid) => !!(s.athletes && (s.athletes.A === uid || s.athletes.B === uid))
@@ -10,9 +10,11 @@ export function sessionMinutes(s) {
   const d = normData(s.data); const m = Math.max(0, ...d.cp.filter(v => v != null)); return m / 60000
 }
 /** Effort ressenti moyen (séances spécialisées) */
-export function sessionRPE(s) {
-  if (!isCustom(s)) return (s.data && s.data.rpe) || null   // Hyrox saisi après coup : ressenti déclaré
-  const r = (s.data.steps || []).map(x => doneOf(x).rpe).filter(v => v != null); return r.length ? r.reduce((a, b) => a + b, 0) / r.length : null
+export function sessionRPE(s, uid) {
+  // En duo, chacun a son propre ressenti (rpeBy.A / rpeBy.B) ; sans uid : moyenne
+  const slot = uid && s.athletes ? (s.athletes.A === uid ? 'A' : s.athletes.B === uid ? 'B' : null) : null
+  if (!isCustom(s)) return rpeOf(s.data, slot) || null   // Hyrox saisi après coup : ressenti déclaré
+  const r = (s.data.steps || []).map(x => rpeOf(x.done, slot)).filter(v => v != null); return r.length ? r.reduce((a, b) => a + b, 0) / r.length : null
 }
 /** Dépense d'une séance (kcal) : d'après la FC si disponible, sinon par MET */
 export function sessionKcal(s, hrRow, p) {
@@ -33,7 +35,7 @@ export function trainingLoad(sessions, uid, today = new Date()) {
   const t7 = iso(new Date(today.getTime() - 7 * 864e5)), t28 = iso(new Date(today.getTime() - 28 * 864e5))
   let a = 0, c = 0, n7 = 0
   sessions.filter(s => isAth(s, uid)).forEach(s => {
-    const load = sessionMinutes(s) * (sessionRPE(s) || 7)
+    const load = sessionMinutes(s) * (sessionRPE(s, uid) || 7)
     if (s.session_date > t28) c += load
     if (s.session_date > t7) { a += load; n7++ }
   })

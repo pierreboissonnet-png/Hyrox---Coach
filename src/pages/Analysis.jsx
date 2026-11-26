@@ -28,7 +28,7 @@ export async function globalPayload({ profile, sessions, teams, races, health })
   const stats = withLevel(athleteStats(profile.id, sessions, plans), {}, level).stats
   const gaps = withSelf(gapsOf(stats, { profile }), level && level.data && level.data.self).filter(g => g.kind !== 'test').slice(0, 6).map(g => ({ point: g.label, pourquoi: g.why }))
   const seances = mine.filter(s => s.session_date >= from).sort((a, b) => a.session_date.localeCompare(b.session_date)).map(s => {
-    const o = { date: s.session_date, nom: s.name, minutes: Math.round(sessionMinutes(s)), effort: sessionRPE(s) }
+    const o = { date: s.session_date, nom: s.name, minutes: Math.round(sessionMinutes(s)), effort: sessionRPE(s, profile.id) }
     if (s.data && s.data.stretch) return { ...o, type: 'étirements' }
     if (isQuick(s)) return { ...o, type: 'activité', activite: exLabel((s.data.steps || [])[0] || {}) }
     if (isCustom(s)) { const c = customSummary(s); return { ...o, type: 'séance perso', exercices: [...new Set(c.steps.map(exLabel))].slice(0, 8), objectifs_atteints: c.achievement != null ? Math.round(c.achievement * 100) + ' %' : null } }

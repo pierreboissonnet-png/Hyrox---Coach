@@ -159,3 +159,13 @@ test('relais de séance perso : découpage rapide et temps au prorata', async ()
   const T = timeRelays(x, [{ w: 'B', q: 250, u: 'm' }, { w: 'A', q: 500, u: 'm' }, { w: 'B', q: 250, u: 'm' }])
   assert.equal(T[0].s, 1000); assert.equal(T[0].e, 61000); assert.equal(T[2].e, 241000); assert.ok(T[1].est)
 })
+
+test('ressenti par athlète : chacun le sien, sans écraser l’autre', async () => {
+  const { rpeOf, withRpe } = await import('../src/lib/custom.js')
+  const { sessionRPE } = await import('../src/lib/load.js')
+  let d = withRpe({ meters: 1000 }, 'A', 8); d = withRpe(d, 'B', 6)
+  assert.equal(rpeOf(d, 'A'), 8); assert.equal(rpeOf(d, 'B'), 6); assert.equal(d.rpe, 7); assert.equal(d.meters, 1000)
+  assert.equal(rpeOf(withRpe({ rpe: 9 }, 'A', 9), 'B'), null)
+  const s = { athletes: { A: 'p', B: 'm' }, data: { format: 'custom', steps: [{ ex: 'ski', done: d }] } }
+  assert.equal(sessionRPE(s, 'p'), 8); assert.equal(sessionRPE(s, 'm'), 6)
+})

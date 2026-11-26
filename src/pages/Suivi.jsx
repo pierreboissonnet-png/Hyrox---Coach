@@ -25,7 +25,7 @@ export function SuiviPage() {
     if (range === 'plan' && plan && plan.created) return plan.created
     return addDays(today, -7 * (+range || 8) + 1)
   }, [range, plan, today])
-  const W = useMemo(() => weekly({ sessions: P.sessions, plan, doneOn, wellbeing: wb.data || [], vitals: P.vitals, sleep: sl.data || [], from, today }), [P.sessions, plan, wb.data, sl.data, P.vitals, from, P.manual])
+  const W = useMemo(() => weekly({ sessions: P.sessions, plan, doneOn, wellbeing: wb.data || [], vitals: P.vitals, sleep: sl.data || [], from, today, uid: profile.id }), [P.sessions, plan, wb.data, sl.data, P.vitals, from, P.manual])
   const skip = useMemo(() => skipped({ plan, doneOn, from, today }).reverse(), [plan, from, P.manual, P.byDate])
   const gw = useMemo(() => gapWork({ gaps: an.gaps, plan, sessions: P.sessions, from, today }), [an.gaps, plan, P.sessions, from])
   const exs = useMemo(() => progressExercises(P.sessions), [P.sessions])

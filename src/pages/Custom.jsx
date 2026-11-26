@@ -7,7 +7,7 @@ import { Page, List, Row, Field, Seg, Empty, Icon, Stat, Sheet, useToast, useLoa
 import { createPortal } from 'react-dom'
 import { LineChart, Bars, COLORS } from '../charts.jsx'
 import { fmt, fd, parseT, frDate, todayISO, tone, STATION, normPlan, planRelays } from '../lib/hyrox.js'
-import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel, relayUnit, stepTotal, genRelays, timeRelays } from '../lib/custom.js'
+import { EXERCISES, EX, CATS, METRICS, STRENGTH, FORMATS, newBlock, newGroup, isGroup, expand, defaultTarget, emptyCustom, doneOf, achievement, paceOf, e1rm, customSummary, customEnd, progression, kcalFromHR, kcalFromMET, fmtTarget, exLabel, stepLabel, relayUnit, stepTotal, genRelays, timeRelays, rpeOf, withRpe } from '../lib/custom.js'
 import { LIBRARY, LIB_CATS, LIB } from '../lib/library.js'
 import { activeZones, hits, altFor, adaptBlocks, ZONE } from '../lib/pain.js'
 import { StretchSuggest } from './Body.jsx'
@@ -270,9 +270,9 @@ export function NewCustom() {
 // ---------------------------------------------------------------- chrono
 const buzz = () => { try { navigator.vibrate && navigator.vibrate(180) } catch {} try { const C = window.AudioContext || window.webkitAudioContext; if (!C) return; const c = buzz.c || (buzz.c = new C()), o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.18) } catch {} }
 function useNow(on) { const [n, setN] = useState(Date.now()); useEffect(() => { if (!on) return; const t = setInterval(() => setN(Date.now()), 200); return () => clearInterval(t) }, [on]); return n }
-function DoneForm({ st, onSave, compact, withTime }) {
+function DoneForm({ st, onSave, compact, withTime, slot, partner }) {
   const t = st.target || {}, d0 = st.done || {}
-  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: d0.rpe ?? 7, time: (d0.time ?? doneOf(st).time) != null ? fmt(d0.time ?? doneOf(st).time) : '' })
+  const [v, setV] = useState({ meters: d0.meters ?? t.meters ?? '', reps: d0.reps ?? (st.ex === 'amrap' ? '' : t.reps ?? ''), load: d0.load ?? t.load ?? '', cal: d0.cal ?? t.cal ?? '', rounds: d0.rounds ?? '', rpe: (slot ? rpeOf(d0, slot) : d0.rpe) ?? 7, time: (d0.time ?? doneOf(st).time) != null ? fmt(d0.time ?? doneOf(st).time) : '' })
   // Champs : ceux de l'objectif, ceux déjà saisis, ceux de l'exercice, et ceux ajoutés à la main (+ Charge…)
   const [extra, setExtra] = useState([])
   const def = defaultTarget(st.ex) || {}
@@ -288,8 +288,9 @@ function DoneForm({ st, onSave, compact, withTime }) {
     {keys.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: `repeat(${keys.length}, 1fr)`, gap: 6 }}>{keys.map(k => <label key={k} className="tiny muted" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{st.ex === 'amrap' && k === 'reps' ? 'Reps en plus' : METRICS[k][0] + unit(k) + ' réalisé(e)'}<input style={inp} inputMode="decimal" value={v[k]} onChange={e => setV({ ...v, [k]: e.target.value })} /></label>)}</div>}
     {addable.length > 0 && <div className="row-gap" style={{ marginTop: 6 }}>{addable.map(k => <button key={k} type="button" className="btn plain small" style={{ padding: '2px 6px' }} onClick={() => setExtra([...extra, k])}>+ {METRICS[k][0]}</button>)}</div>}
     {pace && <div className="small" style={{ marginTop: 6 }}>Allure : <b className="num">{pace}</b>{t.time && t.meters ? <span className="muted"> · visée {fmt(t.time / (t.meters / (st.ex === 'run' ? 1000 : 500)))}</span> : ''}</div>}
-    <div className="row-gap small" style={{ marginTop: 6 }}><span>Effort ressenti</span><input type="range" min="1" max="10" value={v.rpe} onChange={e => setV({ ...v, rpe: +e.target.value })} style={{ flex: 1 }} aria-label="Effort ressenti" /><b className="num">{v.rpe}/10</b></div>
-    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => onSave({ ...(withTime ? { time: tSec > 0 ? tSec : null } : d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds), rpe: v.rpe })}>Valider</button>
+    <div className="row-gap small" style={{ marginTop: 6 }}><span>{slot ? 'Mon effort ressenti' : 'Effort ressenti'}</span><input type="range" min="1" max="10" value={v.rpe} onChange={e => setV({ ...v, rpe: +e.target.value })} style={{ flex: 1 }} aria-label="Effort ressenti" /><b className="num">{v.rpe}/10</b></div>
+    {slot && partner && <div className="tiny muted">{partner.name} : {rpeOf(d0, partner.slot) != null ? rpeOf(d0, partner.slot) + '/10' : 'pas encore noté'} (chacun note le sien)</div>}
+    <button className={'btn block ' + (compact ? 'small' : '')} style={{ marginTop: 8 }} onClick={() => { const base = { ...d0, ...(withTime ? { time: tSec > 0 ? tSec : null } : d0.time != null ? { time: d0.time } : {}), meters: parseNum(v.meters), reps: parseNum(v.reps), load: parseNum(v.load), cal: parseNum(v.cal), rounds: parseNum(v.rounds) }; onSave(slot ? withRpe(base, slot, v.rpe) : { ...base, rpe: v.rpe }) }}>Valider</button>
   </div>
 }
 export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
@@ -305,7 +306,8 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
   const restLeft = st && st.s == null && prev && prev.e != null ? (prev.window ? prev.window - (t - prev.s) / 1000 : prev.rest ? prev.rest - (t - prev.e) / 1000 : null) : null
   const nm = w => w === 'AB' ? 'Les deux' : who(w)
   // Atelier Hyrox en duo : rappel des relais prévus dans le plan de course de l'équipe
-  const { teams } = useApp(), team = s.team_id ? teams.find(x => x.id === s.team_id) : null
+  const { teams, profile } = useApp(), team = s.team_id ? teams.find(x => x.id === s.team_id) : null
+  const chronoSlot = s.athletes && s.athletes.B ? (s.athletes.A === profile.id ? 'A' : s.athletes.B === profile.id ? 'B' : null) : null
   const relaysOf = ex => team && STATION[ex] ? planRelays(normPlan(team.plan), ex) : []
   // Relais pointés pendant un exercice fait à deux (comme sur une séance Hyrox)
   const relayable = x => !!(s.athletes && s.athletes.B && x.w === 'AB' && !x.auto && !x.window && !x.hold)
@@ -358,7 +360,7 @@ export function CustomChrono({ s, commit, who, undo, canUndo, keeperOnly }) {
         {!keeperOnly && <div className="row-gap" style={{ marginTop: 8, justifyContent: 'center' }}><a className="btn glass small" href="#/moi/programme"><Icon name="cal" size={14} />Programme</a><a className="btn glass small" href="#/moi/etirements"><Icon name="leaf" size={14} />Étirements</a><a className="btn glass small" href="#/moi/sante?t=forme"><Icon name="spark" size={14} />Forme</a></div>}</div>}
     </div>
     {pendingDone >= 0 && <div className="glass card"><div className="small" style={{ marginBottom: 6 }}><b>{stepLabel(steps[pendingDone])}</b> en {fmt(doneOf(steps[pendingDone]).time)} : qu’avez-vous réalisé ?</div>
-      <DoneForm key={pendingDone} st={steps[pendingDone]} compact onSave={v => { const x = cl(); x.steps[pendingDone].done = v; commit(x) }} /></div>}
+      <DoneForm key={pendingDone} st={steps[pendingDone]} compact slot={chronoSlot} partner={chronoSlot ? { slot: chronoSlot === 'A' ? 'B' : 'A', name: who(chronoSlot === 'A' ? 'B' : 'A') } : null} onSave={v => { const x = cl(); x.steps[pendingDone].done = v; commit(x) }} /></div>}
     <div className="row-gap"><button className="btn glass small" disabled={!canUndo} onClick={undo}><Icon name="undo" size={16} />Annuler</button><span className="spacer" />
       {st && <button className="btn plain small" onClick={() => { const x = cl(); const k = cur; if (x.steps[k].s == null) x.steps[k].s = rel(); x.steps[k].e = x.steps[k].s; x.steps[k].done = { skipped: true }; commit(x) }}>Passer l’étape</button>}
       <span className="small muted">Étape {Math.min(steps.length, cur < 0 ? steps.length : cur + 1)}/{steps.length}</span></div>
@@ -430,7 +432,11 @@ function StepRelays({ x, who, onChange }) {
 const relSum = (x, who) => { if (!x.relays || !x.relays.length) return ''; const o = relaySplit(x), u = x.relays[0].u || ''; return ' · relais : ' + ['A', 'B'].filter(w => o[w].n).map(w => `${who ? who(w) : w} ${o[w].n}×${o[w].q ? ' ' + Math.round(o[w].q) + uTxt(u) : ''} ${fmt(o[w].t)}`).join(' · ') }
 
 export function CustomResults({ s, commit, patch, keeperOnly, who }) {
-  const { reload } = useApp()
+  const { reload, profile } = useApp()
+  // En duo : chacun note son propre ressenti
+  const mySlot = hasB(s) ? (s.athletes.A === profile.id ? 'A' : s.athletes.B === profile.id ? 'B' : null) : null
+  const partner = mySlot ? { slot: mySlot === 'A' ? 'B' : 'A', name: who(mySlot === 'A' ? 'B' : 'A') } : null
+  const [allRpe, setAllRpe] = useState(7)
   const d = s.data, steps = d.steps || []
   const [open, setOpen] = useState(null)
   const sum = customSummary(s)
@@ -446,14 +452,21 @@ export function CustomResults({ s, commit, patch, keeperOnly, who }) {
   async function del() { if (!confirm('Supprimer définitivement cette séance ?')) return; await api.sessions.remove(s.id); await reload(['sessions']); location.hash = '#/seances' }
   return <>
     <div className="stats"><Stat k="Étapes réalisées" v={`${sum.done}/${sum.n}`} /><Stat k="Objectifs atteints" v={pct(sum.achievement)} tone={sum.achievement >= 1 ? 'good' : 'bad'} /><Stat k="Temps de travail" v={fmt(sum.work)} d={sum.rest ? 'récup ' + fmt(sum.rest) : ''} /></div>
+    {mySlot && <div className="glass card" style={{ marginBottom: 10 }}>
+      <div className="small" style={{ fontWeight: 600 }}>Mon effort ressenti sur la séance</div>
+      <div className="row-gap small" style={{ marginTop: 6 }}><input type="range" min="1" max="10" value={allRpe} onChange={e => setAllRpe(+e.target.value)} style={{ flex: 1 }} aria-label="Mon effort ressenti sur la séance" /><b className="num">{allRpe}/10</b></div>
+      <div className="tiny muted" style={{ margin: '2px 0 6px' }}>{(() => { const a = steps.map(x => rpeOf(x.done, partner.slot)).filter(v => v != null); return partner.name + (a.length ? ' : ' + (Math.round(a.reduce((p, q) => p + q, 0) / a.length * 10) / 10) + '/10 en moyenne' : ' n’a pas encore noté son ressenti') })()} · chacun note le sien, sans effacer celui de l’autre.</div>
+      <button className="btn tinted small block" onClick={() => { const y = JSON.parse(JSON.stringify(d)); y.steps.forEach(x => { if (x.done || x.e != null) x.done = withRpe(x.done || {}, mySlot, allRpe) }); commit(y) }}>Appliquer à tous les exercices réalisés</button>
+      <div className="tiny muted" style={{ marginTop: 4 }}>Ou exercice par exercice : touchez une ligne ci-dessous.</div>
+    </div>}
     <List>{steps.map((x, i) => { const dn = doneOf(x), a = achievement(x), pc = paceOf(x); return <React.Fragment key={i}>
-      <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}${relSum(x, who)}`}
+      <Row title={stepLabel(x)} sub={`Objectif ${fmtTarget(x.target)} · réalisé ${fmtTarget(dn)}${pc ? ' · ' + (pc.rate ? pc.v.toFixed(1).replace('.', ',') : fmt(pc.v)) + ' ' + pc.u : ''}${mySlot ? ['A', 'B'].map(w => rpeOf(x.done, w) != null ? ' · ' + who(w).split(' ')[0] + ' ' + rpeOf(x.done, w) + '/10' : '').join('') : dn.rpe ? ' · effort ' + dn.rpe + '/10' : ''}${relSum(x, who)}`}
         value={<span className={a == null ? 'faint' : a >= 1 ? 'good' : a < 0.9 ? 'bad' : 'even'}>{pct(a)}</span>} onClick={() => setOpen(open === i ? null : i)} />
       {open === i && <div className="row stack" style={{ background: 'var(--fill)' }}>
         <div className="row-gap" style={{ marginBottom: 8, flexWrap: 'nowrap' }}><span className="tiny muted">Exercice</span><ExSelect value={x.ex} name={x.name} onChange={(ex, nm) => setEx(i, ex, nm)} />
           <button type="button" className="icon-btn" style={{ width: 34, height: 34, color: 'var(--bad)' }} aria-label="Retirer cet exercice" onClick={() => delStep(i)}><Icon name="trash" size={17} /></button></div>
         {hasB(s) && x.w === 'AB' && <StepRelays key={i + ':' + (x.relays || []).length + ':' + x.ex} x={x} who={who} onChange={L => { const y = JSON.parse(JSON.stringify(d)); y.steps[i].relays = L; commit(y) }} />}
-        <DoneForm key={x.ex} st={x} withTime onSave={v => { setDone(i, v); setOpen(null) }} />
+        <DoneForm key={x.ex} st={x} withTime slot={mySlot} partner={partner} onSave={v => { setDone(i, v); setOpen(null) }} />
       </div>}
     </React.Fragment> })}</List>
     <button className="btn glass block" style={{ marginTop: 10 }} onClick={() => setAdding(true)}><Icon name="plus" size={16} /> Ajouter un exercice réalisé</button>

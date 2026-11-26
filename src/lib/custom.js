@@ -312,3 +312,20 @@ export function timeRelays(x, relays) {
     return { ...r, s, e, est: r.u !== 's' }
   })
 }
+
+// ---------- Effort ressenti par athlète (séances à deux) ----------
+/** Ressenti d'un athlète (slot A/B) sur une étape ou une séance ; sans slot : moyenne des deux */
+export function rpeOf(o, slot) {
+  if (!o) return null
+  const by = o.rpeBy || {}
+  if (slot) return by[slot] != null ? +by[slot] : (Object.keys(by).length ? null : (o.rpe != null ? +o.rpe : null))
+  const v = Object.values(by).filter(x => x != null).map(Number); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : (o.rpe != null ? +o.rpe : null)
+}
+/** Enregistre le ressenti d'un athlète sans écraser celui de l'autre (rpe = moyenne, pour l'existant) */
+export function withRpe(o, slot, v) {
+  const by = { ...((o && o.rpeBy) || {}) }
+  if (!o || !o.rpeBy) { if (o && o.rpe != null && slot) { /* ancien ressenti unique : on le laisse à son auteur inconnu */ } }
+  by[slot] = v
+  const vals = Object.values(by).filter(x => x != null)
+  return { ...(o || {}), rpeBy: by, rpe: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 10) / 10 }
+}

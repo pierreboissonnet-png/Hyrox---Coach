@@ -29,7 +29,7 @@ export function weeksBetween(from, to) { const L = []; for (let w = mondayOf(fro
  * Tableau de bord par semaine.
  * sessions : séances de l'athlète ; plan : plan du programme (ou null) ; doneOn(date) : jour du plan validé
  */
-export function weekly({ sessions, plan, doneOn, wellbeing = [], vitals = [], sleep = [], from, today }) {
+export function weekly({ sessions, plan, doneOn, wellbeing = [], vitals = [], sleep = [], from, today, uid }) {
   const real = sessions.filter(s => !isPlanned(s))
   const planDays = plan ? plan.weeks.flatMap(w => w.days).filter(d => d.key !== 'repos') : []
   return weeksBetween(from, today).map(ws => {
@@ -43,7 +43,7 @@ export function weekly({ sessions, plan, doneOn, wellbeing = [], vitals = [], sl
       ws, label: ws.slice(8, 10) + '/' + ws.slice(5, 7),
       min: Math.round(train.reduce((a, s) => a + sessionMinutes(s), 0)),
       planMin: Math.round(P.reduce((a, d) => a + (d.min || 0), 0)),
-      load: Math.round(train.reduce((a, s) => a + sessionMinutes(s) * (sessionRPE(s) || 7), 0)),
+      load: Math.round(train.reduce((a, s) => a + sessionMinutes(s) * (sessionRPE(s, uid) || 7), 0)),
       km: Math.round(train.reduce((a, s) => a + runKmOf(s), 0) * 10) / 10,
       n: train.length, stretch: S.filter(isStretch).length,
       planned: P.length, due: past.length, done: past.filter(d => doneOn(d.date)).length,

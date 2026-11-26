@@ -9,7 +9,7 @@ import { todayISO } from '../lib/hyrox.js'
 import { normData, nextIdx, segStart, split, objCum, actions, relDur, relObj, relAmt, stStats, runKm, athKm, unitOf, qtyOf, qtyFrac } from '../lib/session.js'
 import { summary, insights, hrBySegment, slotOf, segmentDetail, cyclePerformance } from '../lib/analyze.js'
 import { phaseOn, adjustTime, PHASE_LABEL, PHASE_COLOR } from '../lib/health.js'
-import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned, stepLabel } from '../lib/custom.js'
+import { isCustom, customEnd, customSummary, doneOf, achievement, exLabel, fmtTarget, progression, isQuick, isPlanned, stepLabel, rpeOf, withRpe } from '../lib/custom.js'
 import { QuickSheet } from './Activity.jsx'
 import { CustomChrono, CustomResults, CustomStats, hrBySteps } from './Custom.jsx'
 import { StretchSuggest } from './Body.jsx'
@@ -257,7 +257,8 @@ function RelayEditor({ d, plan, who, commit }) {
 }
 
 function Times({ s, d, plan, duo, who, commit, patch, keeperOnly }) {
-  const { reload } = useApp(), toast = useToast()
+  const { reload, profile } = useApp(), toast = useToast()
+  const mySlot = duo ? (s.athletes.A === profile.id ? 'A' : s.athletes.B === profile.id ? 'B' : null) : null
   const [edit, setEdit] = useState(false)
   function setSplit(i, str) {
     const v = parseT(str); if (v == null || Number.isNaN(v)) return
@@ -299,12 +300,13 @@ function Times({ s, d, plan, duo, who, commit, patch, keeperOnly }) {
         <Field label="Nom"><input defaultValue={s.name} onBlur={e => patch({ name: e.target.value })} /></Field>
         <Field label="Date"><input type="date" defaultValue={s.session_date} onBlur={e => patch({ session_date: e.target.value })} /></Field>
         <Field label="Type"><select defaultValue={s.kind} onChange={e => patch({ kind: e.target.value })}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-        <Field label="Effort ressenti" sub="1 à 10"><select value={d.rpe || ''} onChange={e => commit({ ...d, rpe: e.target.value ? +e.target.value : null })}><option value="">—</option>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <option key={v} value={v}>{v}/10</option>)}</select></Field>
+        {mySlot ? <Field label="Mon effort ressenti" sub={who(mySlot === 'A' ? 'B' : 'A') + ' : ' + (rpeOf(d, mySlot === 'A' ? 'B' : 'A') != null ? rpeOf(d, mySlot === 'A' ? 'B' : 'A') + '/10' : 'pas encore noté')}><select value={rpeOf(d, mySlot) || ''} onChange={e => e.target.value && commit(withRpe(d, mySlot, +e.target.value))}><option value="">—</option>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <option key={v} value={v}>{v}/10</option>)}</select></Field>
+        : <Field label="Effort ressenti" sub="1 à 10"><select value={d.rpe || ''} onChange={e => commit({ ...d, rpe: e.target.value ? +e.target.value : null })}><option value="">—</option>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => <option key={v} value={v}>{v}/10</option>)}</select></Field>}
         <div className="row stack"><span className="small muted">Note</span><textarea defaultValue={d.note} onBlur={e => commit({ ...d, note: e.target.value })} /></div>
       </List>
       {!keeperOnly && <button className="btn plain block" style={{ color: 'var(--bad)', marginTop: 10 }} onClick={del}>Supprimer la séance</button>}
     </>}
-    {!edit && (d.rpe || d.avgHR) && <p className="note">{[d.rpe && 'Effort ressenti ' + d.rpe + '/10', d.avgHR && 'FC moyenne ' + d.avgHR + ' bpm', d.manual && 'temps saisis après coup'].filter(Boolean).join(' · ')}</p>}
+    {!edit && (d.rpe || d.rpeBy || d.avgHR) && <p className="note">{[d.rpeBy ? 'Effort ressenti ' + ['A', 'B'].filter(w => d.rpeBy[w] != null).map(w => who(w) + ' ' + d.rpeBy[w] + '/10').join(' · ') : d.rpe && 'Effort ressenti ' + d.rpe + '/10', d.avgHR && 'FC moyenne ' + d.avgHR + ' bpm', d.manual && 'temps saisis après coup'].filter(Boolean).join(' · ')}</p>}
     {!edit && d.note && <p className="note">{d.note}</p>}
   </>
 }
