@@ -195,3 +195,24 @@ test('part de chacun sur un exercice en relais', async () => {
   const y = { relays: [{ w: 'A', s: 0, e: 30000 }, { w: 'B', s: 30000, e: 90000 }] }
   assert.equal(Math.round(shareOf(y, 'B').pct * 100), 67); assert.equal(shareOf(y, 'B').u, 's')
 })
+
+test('fiches atelier : diagnostic, séance ciblée et charges', async () => {
+  const { DRILLS, DRILL_ORDER, diagnose, drillCtx, drillSession, drillResults } = await import('../src/lib/drills.js')
+  const { expand, EX } = await import('../src/lib/custom.js')
+  assert.equal(DRILL_ORDER.length, 9)
+  for (const st of DRILL_ORDER) {
+    const ctx = drillCtx(st, { profile: { sex: 'F' }, e1rm: { squat: 70 }, pace: 300 })
+    for (const f of DRILLS[st].factors) {
+      const S = drillSession(st, [f.id], ctx), steps = expand(S.blocks)
+      assert.ok(steps.length >= 2, st + '/' + f.id); steps.forEach(x => assert.ok(EX[x.ex], 'exercice inconnu ' + x.ex))
+      steps.forEach(x => Object.values(x.target || {}).forEach(v => assert.ok(v == null || Number.isFinite(v), st + '/' + f.id + ' cible invalide')))
+    }
+    const T = DRILLS[st].test(ctx); assert.ok(expand(T.blocks).length === 1)
+  }
+  assert.equal(drillCtx('wb', { profile: { sex: 'M' } }).L, 6); assert.equal(drillCtx('push', { profile: { sex: 'F' } }).L, 102)
+  const D = diagnose('wb', { self: { state: 'physique', urgency: 3 }, drop: 0.25 })
+  assert.equal(D[0].id, 'endurance'); assert.ok(D[0].why.length >= 2)
+  assert.equal(diagnose('pull', { self: { state: 'charge', urgency: 2, cur: 100, target: 150 } })[0].id, 'force')
+  const s = { athletes: { A: 'u', B: null }, session_date: '2026-11-20', data: { format: 'custom', startedAt: 1, drillTest: 'wb', steps: [{ ex: 'wb', w: 'A', s: 0, e: 300000, done: { reps: 100 } }] } }
+  assert.equal(drillResults([s], 'u', 'wb')[0].t, 300)
+})

@@ -223,7 +223,7 @@ export function NewCustom() {
       }
       const s = await api.sessions.save({ owner: user.id, team_id: team ? team.id : null, kind: 'entrainement', session_date: f.date,
         name: f.title.trim() || 'Séance du ' + frDate(f.date).slice(0, 5), athletes: team ? slotsOf(team) : { A: user.id, B: null },
-        names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: { ...emptyCustom(bl, f.title.trim()), ...(q.get('plan') ? { planDay: q.get('plan') } : {}) } })
+        names: { A: names.A, B: team ? names.B : null }, timekeeper: f.keeper, plan: null, data: { ...emptyCustom(bl, f.title.trim()), ...((pre && pre.extra) || {}), ...(q.get('plan') ? { planDay: q.get('plan') } : {}) } })
       await reload(['sessions'])
       if (mode === 'plan') { toast('Séance planifiée le ' + frDate(f.date)); go(q.get('back') || '#/seances', true) }
       else go('#/seance/' + s.id + (mode === 'live' ? '/chrono' : '/temps'), true)

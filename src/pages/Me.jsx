@@ -27,6 +27,7 @@ export function Me() {
     <Sec title="Entraînement">
       <List>
         <Row icon="chart" color="#30d158" title="Suivi de l’entraînement" sub="Volume, km, séances faites ou sautées, progression, forme" href="#/moi/suivi" />
+        <Row icon="bolt" color="#ff375f" title="Fiches atelier" sub="Votre point faible sur chaque station et la course, exercices ciblés, test" href="#/moi/ateliers" />
         <Row icon="cal" color="#5e5ce6" title="Programme jusqu’à la course" sub={next ? next.name + ' · J−' + daysUntil(next.race_date) : 'Sans course planifiée'} href="#/moi/programme" />
         <Row icon="chart" color="#ff375f" title="Mon niveau" sub="Bilan : temps de course, ateliers, force. Sert de base au plan" href="#/moi/niveau" />
         <Row icon="spark" color="#5e5ce6" title="Analyse globale par Claude" sub="Toute votre préparation passée au crible, avec vos questions" href="#/moi/analyse" />

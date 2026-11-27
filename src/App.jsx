@@ -5,6 +5,7 @@ import { AuthPage, Onboarding, SetupPage, NewPassword } from './pages/Auth.jsx'
 import Home from './pages/Home.jsx'
 import Races, { RaceDetail } from './pages/Races.jsx'
 import SearchPage from './pages/Search.jsx'
+import { DrillsPage, DrillPage } from './pages/Drills.jsx'
 import { Teams, TeamDetail, PlanEditor } from './pages/Teams.jsx'
 import { Sessions, NewSession, Compare } from './pages/Sessions.jsx'
 import SessionPage from './pages/Session.jsx'
@@ -130,7 +131,8 @@ export default function App() {
   else if (a === 'seance') page = <SessionPage id={b} tab={c} />
   else if (a === 'comparer') page = <Compare />
   else if (a === 'moi' && !b) page = <Me />
-  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, analyse: <AnalysisPage />, suivi: <SuiviPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
+  else if (a === 'moi' && b === 'ateliers' && c) page = <DrillPage st={c} />
+  else if (a === 'moi') page = { programme: <Program />, nutrition: <Nutrition />, complements: <Supplements />, sante: <Health />, profil: <Profile />, reglages: <Settings />, sync: <HealthSync />, import: <Import />, bugs: <BugsPage />, analyses: <AnalysesPage />, analyse: <AnalysisPage />, suivi: <SuiviPage />, ateliers: <DrillsPage />, etirements: <StretchPage />, niveau: <LevelPage /> }[b] || <Me />
   else page = <Home />
   const tab = '#/' + ({ seance: 'seances', comparer: 'seances', course: 'courses' }[a] || a || '')
 

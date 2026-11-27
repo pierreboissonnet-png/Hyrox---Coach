@@ -16,6 +16,7 @@ export const ENTRIES = [
   E('bolt', '#bf5af2', 'Bibliothèque de séances', 'Séances types et mes modèles', '#/seance/specifique?lib=1', 'bibliotheque modeles templates seances types planifier'),
   E('compare', '#5e5ce6', 'Comparer des séances', 'Deux séances côte à côte', '#/comparer', 'comparer comparaison deux seances cote a cote'),
   E('chart', '#30d158', 'Suivi de l’entraînement', 'Volume, km, séances faites ou sautées, progression, forme', '#/moi/suivi', 'suivi courbe volume km kilometres seances sautees assiduite progression exercice charge forme'),
+  E('bolt', '#ff375f', 'Fiches atelier', 'Point faible par station, exercices ciblés, test', '#/moi/ateliers', 'fiches atelier exercices cibles travailler station point faible wall balls sled pull push skierg rameur farmers fentes burpees course technique force endurance amplitude test'),
   E('cal', '#5e5ce6', 'Programme jusqu’à la course', 'Plan semaine par semaine', '#/moi/programme', 'programme plan entrainement semaine calendrier adapter rythme'),
   E('chart', '#ff375f', 'Mon niveau', 'Bilan : temps de course, ateliers, force', '#/moi/niveau', 'niveau bilan test temps ateliers force record partager duo courbe progression'),
   E('spark', '#5e5ce6', 'Analyse globale par Claude', 'Toute la préparation passée au crible', '#/moi/analyse', 'analyse globale claude ia coach avis question'),
